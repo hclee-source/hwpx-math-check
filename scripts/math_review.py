@@ -16,23 +16,28 @@ import argparse, json
 from collections import Counter
 
 import eq_answer_check
+import extra_checks
 import twin_check
 
 SEV_ORDER = {'high': 0, 'medium': 1, 'low': 2}
 
 
 def run(paths):
-    findings, stats, details = [], {}, {}
+    findings, stats, details, extras = [], {}, {}, {}
     datas = []
     for path in paths:
         data = json.load(open(path, encoding='utf-8'))
         datas.append(data)
+        src = data.get('source', path)
         f, st, dt = eq_answer_check.check(data['items'])
+        ex = extra_checks.analyze(data)
+        f += ex['findings']                      # 메타 정합 위반은 결함 카드로
         for x in f:
-            x['file'] = data.get('source', path)
+            x['file'] = src
         findings += f
         stats[f'검산:{path}'] = dict(st)
         details[str(path)] = dt
+        extras[src] = ex
 
     if len(datas) == 2:
         # 쌍둥이문항 필드가 채워진 쪽이 평가측 — 파일 순서는 어떻게 줘도 된다
@@ -49,7 +54,7 @@ def run(paths):
     findings.sort(key=lambda x: (SEV_ORDER.get(x['sev'], 9), x['code'], x.get('no', 0)))
     items = {i['meta'].get('문항id', i.get('loc', '')): i
              for d in datas for i in d['items']}
-    return findings, stats, details, items
+    return findings, stats, details, items, extras
 
 
 if __name__ == '__main__':
@@ -62,14 +67,16 @@ if __name__ == '__main__':
     if len(a.items_json) > 2:
         ap.error('items.json 은 1개 또는 2개')
 
-    findings, stats, details, items = run(a.items_json)
+    findings, stats, details, items, extras = run(a.items_json)
     if a.out:
-        json.dump({'findings': findings, 'stats': stats, 'details': details},
+        json.dump({'findings': findings, 'stats': stats, 'details': details,
+                   'extras': extras},
                   open(a.out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     if a.html:
         import report_html
         open(a.html, 'w', encoding='utf-8').write(
-            report_html.render(findings, stats, details, a.items_json, items=items))
+            report_html.render(findings, stats, details, a.items_json,
+                               items=items, extras=extras))
 
     n_items = sum(len(json.load(open(p, encoding='utf-8'))['items'])
                   for p in a.items_json)

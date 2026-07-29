@@ -148,7 +148,8 @@ footer a{color:var(--muted)}
 <script>
 const $ = id => document.getElementById(id);
 const PY_FILES = ['hml2sympy.py','eq_answer_check.py','twin_check.py',
-                  'math_review.py','hwpx_items.py','report_html.py'];
+                  'math_review.py','hwpx_items.py','report_html.py',
+                  'extra_checks.py'];
 let picked = [], pyReady = null, running = false;
 
 function log(msg, replace=false){
@@ -170,7 +171,8 @@ async function boot(){
   }
   await py.runPythonAsync(
     "import sys\nsys.path.insert(0, '/work/scripts')\n" +
-    "import json, hwpx_items, eq_answer_check, twin_check, math_review, report_html");
+    "import json, hwpx_items, eq_answer_check, twin_check, math_review, " +
+    "report_html, extra_checks");
   log('준비 완료. 파일을 선택하세요.');
   return py;
 }
@@ -239,7 +241,7 @@ for path, name in inputs:
         json.dump(data, open(out, 'w'), ensure_ascii=False)
         jsons.append(out); srcs.append(name)
 
-findings, stats, details = [], {}, {}
+findings, stats, details, extras = [], {}, {}, {}
 datas = []
 for jp, name in zip(jsons, srcs):
     d = json.load(open(jp))
@@ -247,9 +249,13 @@ for jp, name in zip(jsons, srcs):
     js_log(f'[검산] {name} — {len(d["items"])}문항')
     js_progress(0, len(d['items']))
     f, st, dt = eq_answer_check.check(d['items'], progress=js_progress)
+    ex = extra_checks.analyze(d)
+    f += ex['findings']
     for x in f: x['file'] = name
     findings += f; stats['검산:' + name] = dict(st); details[name] = dt
-    js_log(f'   완료: {dict(st)}')
+    extras[name] = ex
+    js_log(f'   완료: {dict(st)} · 메모 {len(ex["memos"])} · '
+           f'표기 {sum(t["n"] for t in ex["style"].values())} · 중복후보 {len(ex["dups"])}')
 
 if len(datas) == 2:
     js_log('[교차] 쌍둥이문항 검수')
@@ -263,7 +269,7 @@ findings.sort(key=lambda x: ({'high':0,'medium':1,'low':2}.get(x.get('sev'), 9),
 js_log(f'검수 완료: 결함 후보 {len(findings)}건')
 items_map = {i['meta'].get('문항id', i.get('loc', '')): i
              for d in datas for i in d['items']}
-report_html.render(findings, stats, details, srcs, items=items_map)
+report_html.render(findings, stats, details, srcs, items=items_map, extras=extras)
 `);
     $('frame').srcdoc = html;
     $('dl').href = URL.createObjectURL(new Blob([html], {type: 'text/html'}));

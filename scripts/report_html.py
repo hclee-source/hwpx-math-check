@@ -197,6 +197,10 @@ h2{font-size:1.05em;font-weight:700;margin:34px 0 10px}
 .ok{color:var(--ok)}.warn{color:var(--warn)}
 .empty{background:#EFF3EA;border:1px solid #CBDABE;border-radius:14px;
        padding:14px 18px;color:var(--ok);font-weight:700}
+.lead{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+      padding:14px 20px;margin:16px 0 6px;box-shadow:var(--shadow);font-size:1.02em}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.86em;
+     background:var(--surface2);padding:1px 6px;border-radius:5px}
 details.finding{border:1px solid var(--border);border-left:5px solid var(--muted);
        border-radius:14px;margin:10px 0;background:var(--surface);
        box-shadow:var(--shadow);overflow:hidden}
@@ -236,13 +240,52 @@ table.mini tr.bad td{background:#F6D3CB;font-weight:700}
 """
 
 
-def render(findings, stats, details, sources, items=None):
+def _merge_extras(extras):
+    """파일별 extras를 보고서용으로 합친다."""
+    memos, dups, passed = [], [], []
+    style = {}
+    stats_by = {}
+    for src, ex in (extras or {}).items():
+        memos += ex.get('memos', [])
+        dups += ex.get('dups', [])
+        for name, t in ex.get('style', {}).items():
+            g = style.setdefault(name, {'hint': t['hint'], 'n': 0,
+                                        'locs': [], 'example': t['example']})
+            g['n'] += t['n']
+            g['locs'] += [l for l in t['locs'] if l not in g['locs']]
+            g['example'] = g['example'] or t['example']
+        if ex.get('passed'):
+            passed.append((src, ex['passed']))
+        if ex.get('stats'):
+            stats_by[src] = ex['stats']
+    return memos, style, dups, stats_by, passed
+
+
+def render(findings, stats, details, sources, items=None, extras=None):
     items = items or {}
+    memos, style, dups, stats_by, passed = _merge_extras(extras)
     now = time.strftime('%Y-%m-%d %H:%M')
     p = [f'<meta charset="utf-8"><title>문항 검수 보고서</title><style>{CSS}</style>']
     p.append('<h1>수학 문항 검수 보고서</h1>')
     p.append(f'<p class="muted">{_e(" · ".join(sources))}<br>생성 {now} · '
              'hwpx-math-check (정답↔해설 SymPy 검산 + 조판 결함 + 쌍둥이 교차)</p>')
+
+    # 한 줄 요약
+    n_items = len(items)
+    high = sum(1 for f in findings if f.get('sev') == 'high')
+    style_n = sum(t['n'] for t in style.values())
+    bits = []
+    if n_items:
+        bits.append(f'총 <b>{n_items}문항</b>')
+    bits.append(f'결함 후보 <b>{len(findings)}건</b>' +
+                (f' (높음 {high})' if high else ''))
+    if memos:
+        bits.append(f'편집 메모 <b>{len(memos)}건</b>')
+    if style_n:
+        bits.append(f'수식 표기 불일치 <b>{style_n}건</b>')
+    if dups:
+        bits.append(f'중복 출제 후보 <b>{len(dups)}쌍</b>')
+    p.append(f'<div class="lead">{" · ".join(bits)}</div>')
 
     p.append(f'<h2>결함 후보 — {len(findings)}건</h2>')
     if not findings:
@@ -305,12 +348,89 @@ def render(findings, stats, details, sources, items=None):
                          f'<summary><span class="sev">{_e(why)}</span>{pg}'
                          f'{_e(loc)}</summary><div class="body">{tail}</div></details>')
 
+    # 중복 출제 후보
+    if dups:
+        p.append(f'<h2>중복 출제 후보 — {len(dups)}쌍</h2>'
+                 '<p class="muted">본문 텍스트 유사도 85% 이상. 숫자만 바꾼 변형인지, '
+                 '실수 중복인지는 사람이 판단한다.</p>')
+        p.append('<table class="mini"><tr><th>문항 A</th><th>문항 B</th>'
+                 '<th>유사도</th><th>정답</th></tr>')
+        for d in dups[:20]:
+            pa = f' ({d["ap"]}쪽)' if d.get('ap') else ''
+            pb = f' ({d["bp"]}쪽)' if d.get('bp') else ''
+            p.append(f'<tr><td class="loclist">{_e(d["a"])}{pa}</td>'
+                     f'<td class="loclist">{_e(d["b"])}{pb}</td>'
+                     f'<td>{d["ratio"]:.0%}</td>'
+                     f'<td>{"동일" if d["same_ans"] else "다름"}</td></tr>')
+        p.append('</table>')
+
+    # 편집 메모
+    if memos:
+        p.append(f'<h2>원고에 남은 편집 메모 — {len(memos)}건</h2>'
+                 '<p class="muted">조판 전 삭제 대상. (그림 수정), 화살표 메모 등 '
+                 '내부 지시가 본문·해설에 남아 있다.</p>')
+        p.append('<table class="mini"><tr><th>문항</th><th>위치</th><th>내용</th></tr>')
+        for m in memos[:40]:
+            pg = f' ({m["page"]}쪽)' if m.get('page') else ''
+            p.append(f'<tr><td class="loclist">{_e(m["loc"])}{pg}</td>'
+                     f'<td>{_e(m["field"])}</td>'
+                     f'<td><mark>{_e(m["hit"][:60])}</mark></td></tr>')
+        if len(memos) > 40:
+            p.append(f'<tr><td colspan="3" class="muted">… 외 {len(memos)-40}건</td></tr>')
+        p.append('</table>')
+
+    # 수식 표기 스타일
+    if style:
+        style_n = sum(t['n'] for t in style.values())
+        p.append(f'<h2>수식 표기 불일치 — {len(style)}유형 {style_n}건</h2>'
+                 '<p class="muted">렌더링이 어긋나거나 문서 내 표기가 통일되지 않은 곳. '
+                 '치명적이지 않지만 조판 품질에 영향.</p>')
+        p.append('<table class="mini"><tr><th>유형</th><th>건수</th>'
+                 '<th>해당 문항</th><th>예시·비고</th></tr>')
+        for name, t in sorted(style.items(), key=lambda x: -x[1]['n']):
+            locs = ', '.join(t['locs'][:8]) + (' …' if len(t['locs']) > 8 else '')
+            ex_txt = _e(t['example']) if t['example'] else ''
+            p.append(f'<tr><td>{_e(name)}</td><td>{t["n"]}</td>'
+                     f'<td class="loclist">{_e(locs)}</td>'
+                     f'<td><span class="muted">{_e(t["hint"])}</span>'
+                     + (f'<br><code>{ex_txt}</code>' if ex_txt else '') + '</td></tr>')
+        p.append('</table>')
+
+    # 통계
+    if stats_by:
+        p.append('<h2>통계적 참고</h2>')
+        for src, st in stats_by.items():
+            dist = st['dist']
+            p.append(f'<p><b>{_e(src)}</b> — 정답 번호 분포</p>')
+            p.append('<table class="mini"><tr>' +
+                     ''.join(f'<th>{"①②③④⑤"[k-1]}</th>' for k in range(1, 6)) + '</tr><tr>' +
+                     ''.join(f'<td>{dist[k]}</td>' for k in range(1, 6)) + '</tr></table>')
+            if st['chi2'] is not None:
+                verdict = ('<b class="warn">쏠림 있음</b> — 재배치 여지'
+                           if st['skewed'] else '균형 — 문제 없음')
+                p.append(f'<p class="muted">χ² = {st["chi2"]} '
+                         f'(df=4, 임계값 9.49) → {verdict}</p>')
+            p.append(f'<p class="muted">정답이 유일하게 가장 긴 보기인 문항: '
+                     f'{st["longest_n"]}건'
+                     + (' — 문제 없음' if st['longest_n'] <= max(5, st['n'] // 15)
+                        else ' — <b>노출 편향 주의</b>') + '</p>')
+
+    # 이상 없음 확인
+    if passed:
+        p.append('<h2>이상 없음 확인 항목</h2>')
+        for src, items_ok in passed:
+            label = f'<b>{_e(src)}</b>: ' if len(passed) > 1 else ''
+            p.append('<p>' + label + ' · '.join(
+                f'<span class="ok">✓</span> {_e(x)}' for x in items_ok) + '</p>')
+
     tw = stats.get('쌍둥이')
     if tw:
         p.append('<h2>쌍둥이문항 교차</h2>'
                  f'<p>쌍 성립 {tw.get("쌍성립", 0)} · 1:N 참조 {tw.get("1:N참조", 0)} · '
                  f'정답 번호 상이 {tw.get("정답상이", 0)}(정상 — 쌍둥이는 숫자 변형 문항)</p>')
 
-    p.append('<p class="muted">이 보고서는 1차 기계 검수 결과다. 풀이 과정 자체의 오류, '
-             '그림, 문장 표현은 검사 범위 밖이며 최종 판단은 사람이 한다.</p>')
+    p.append('<p class="muted">이 보고서는 결정론(패턴·수식 검산) 기반 1차 검수다. '
+             '문제를 직접 풀어야 잡히는 수학적 오류·조건 모순·무의미 조건, 그림, '
+             '문장 표현은 검사 범위 밖 — LLM 검수(claude.ai exam-item-reviewer)를 '
+             '병행하고, 최종 판단은 사람이 한다.</p>')
     return '\n'.join(p)

@@ -218,6 +218,34 @@ def t_pages():
     os.unlink(tmp.name)
 
 
+# ── 5.5 extra_checks 합성 검증 ────────────────────────────────
+
+def t_extra():
+    import extra_checks
+    its = [
+        item(1, ['$1$', '$2$', '$3$', '$4$', '$5$'], 1,
+             '풀이 (그림 수정)\n따라서 $1$', loc='XG0C1S0Aa1-01',
+             meta={'지식단위': 'G0C1S0A', '난이도': '1'}),
+        item(2, ['$root5$', '$2 $', '$3$', '$4$', '$5$'], 2,
+             '← 이거 참고해서 그림 발주\n따라서 $2$', loc='XG0C1S0Aa1-02',
+             meta={'지식단위': 'G0C1S0A', '난이도': '1'}),
+        item(3, ['$1$', '$2$', '$3$', '$4$', '$5$'], 3,
+             '$(x _{1,} y _{1})$ 이용\n따라서 $3$', loc='XG0C1S0Aa9-01',
+             meta={'지식단위': 'G0C1S0A', '난이도': '1'}),   # 난이도 9≠1 위반
+    ]
+    # 중복 후보: 1·2번 본문을 같게
+    its[0]['q'] = its[1]['q'] = '포물선 $y^{2} = 4x$ 의 초점을 지나는 직선이 어쩌고 하는 본문'
+    ex = extra_checks.analyze({'items': its})
+    check('ex.메모2건', len(ex['memos']) == 2, str(ex['memos']))
+    check('ex.root검출', 'root 표기' in ex['style'], str(ex['style'].keys()))
+    check('ex.첨자쉼표', '첨자 안 쉼표' in ex['style'])
+    check('ex.끝공백', '수식 끝 여분 공백' in ex['style'])
+    check('ex.중복쌍', len(ex['dups']) == 1 and ex['dups'][0]['ratio'] > .95,
+          str(ex['dups']))
+    check('ex.난이도위반', any(x['code'] == 'META_MISMATCH' and '난이도' in x['tail']
+                          for x in ex['findings']), str(ex['findings']))
+
+
 # ── 6. 실데이터 회귀 (data/ 있을 때만) ────────────────────────
 
 def t_regression():
@@ -228,7 +256,15 @@ def t_regression():
     if not (os.path.exists(d1) and os.path.exists(d2)):
         print('  (data/ 없음 — 회귀 검증 생략)')
         return
-    findings, stats, details, items = math_review.run([d1, d2])
+    findings, stats, details, items, extras = math_review.run([d1, d2])
+    ex_gn = [v for k, v in extras.items() if '일반' in k][0]
+    check('rg.편집메모', len(ex_gn['memos']) >= 15, len(ex_gn['memos']))
+    check('rg.첨자쉼표8', ex_gn['style'].get('첨자 안 쉼표', {}).get('n') == 8,
+          str(ex_gn['style'].get('첨자 안 쉼표')))
+    check('rg.중복후보', len(ex_gn['dups']) >= 3, len(ex_gn['dups']))
+    check('rg.카이제곱', ex_gn['stats']['chi2'] == 9.85 and ex_gn['stats']['skewed'],
+          str(ex_gn['stats']['chi2']))
+    check('rg.메타정합통과', len(ex_gn['passed']) == 7, str(ex_gn['passed']))
     check('rg.결함수', len(findings) == 2 and
           all(x['code'] == 'EQ_ORPHAN_OP' for x in findings),
           f'{len(findings)} {[x["code"] for x in findings]}')
@@ -245,7 +281,7 @@ def t_regression():
 if __name__ == '__main__':
     for t in (t_transpile, t_eq_ok_value, t_eq_wrong_answer, t_eq_range,
               t_eq_dup, t_eq_equation_options, t_eq_orphan_unbalanced,
-              t_eq_pm, t_twin, t_report, t_pages, t_regression):
+              t_eq_pm, t_twin, t_report, t_pages, t_extra, t_regression):
         print(t.__name__)
         try:
             t()
