@@ -10,30 +10,59 @@
 <style>
 :root{
   --bg:#FAF9F5; --surface:#FFFFFF; --surface2:#F0EEE6;
+  --glass:rgba(255,255,255,.72); --glass2:rgba(240,238,230,.82);
+  --grid:rgba(31,30,29,.030);
   --text:#1F1E1D; --muted:#73726C; --border:#E4E1D5;
   --accent:#D97757; --accent-strong:#C15F3C; --accent-soft:#FBEEE8;
   --ok:#6E8B5E; --shadow:0 1px 3px rgba(31,30,29,.06),0 8px 24px rgba(31,30,29,.05);
+  --glow1:rgba(217,119,87,.11); --glow2:rgba(226,192,138,.16);
+  --glow3:rgba(110,139,94,.09);
 }
 @media (prefers-color-scheme: dark){
   :root{
     --bg:#262624; --surface:#30302E; --surface2:#3A3937;
+    --glass:rgba(48,48,46,.72); --glass2:rgba(58,57,55,.82);
+    --grid:rgba(245,244,239,.035);
     --text:#F5F4EF; --muted:#A6A39A; --border:#45443F;
     --accent:#D97757; --accent-strong:#E08663; --accent-soft:#3E322C;
     --ok:#9DB88D; --shadow:0 1px 3px rgba(0,0,0,.3);
+    --glow1:rgba(217,119,87,.13); --glow2:rgba(226,192,138,.07);
+    --glow3:rgba(110,139,94,.08);
   }
 }
 *{box-sizing:border-box}
 body{font-family:'Pretendard Variable',Pretendard,-apple-system,sans-serif;
-     background:var(--bg);color:var(--text);max-width:720px;margin:0 auto;
-     padding:48px 20px 60px;line-height:1.6;-webkit-font-smoothing:antialiased}
+     color:var(--text);max-width:720px;margin:0 auto;
+     padding:48px 20px 60px;line-height:1.6;-webkit-font-smoothing:antialiased;
+     background:
+       radial-gradient(1100px 620px at 88% -12%, var(--glow1), transparent 62%),
+       radial-gradient(900px 560px at -12% 34%, var(--glow2), transparent 60%),
+       radial-gradient(760px 520px at 55% 112%, var(--glow3), transparent 62%),
+       var(--bg);
+     background-attachment:fixed;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+     background-image:
+       linear-gradient(var(--grid) 1px, transparent 1px),
+       linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+     background-size:26px 26px;
+     -webkit-mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.45) 55%,rgba(0,0,0,.15) 100%);
+     mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.45) 55%,rgba(0,0,0,.15) 100%)}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+.mark{width:46px;height:46px;flex:none;border-radius:13px;
+   background:linear-gradient(135deg,#E08663,#C15F3C);color:#fff;
+   font-family:'Noto Serif KR',serif;font-weight:700;font-size:1.45rem;
+   display:flex;align-items:center;justify-content:center;
+   box-shadow:0 6px 16px rgba(217,119,87,.35),inset 0 1px 0 rgba(255,255,255,.25)}
 h1{font-family:'Noto Serif KR',serif;font-size:2rem;font-weight:700;
-   letter-spacing:-.01em;margin:0 0 6px}
+   letter-spacing:-.01em;margin:0}
 .sub{color:var(--muted);font-size:.95rem;margin:0 0 8px}
 .privacy{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);
    border:1px solid var(--border);border-radius:999px;padding:4px 14px;
    font-size:.82rem;color:var(--muted);margin-bottom:28px}
 .privacy svg{width:13px;height:13px;flex:none}
-#drop{background:var(--surface);border:1.5px dashed var(--border);border-radius:16px;
+#drop{background:var(--glass);backdrop-filter:blur(10px);
+   -webkit-backdrop-filter:blur(10px);
+   border:1.5px dashed var(--border);border-radius:16px;
    padding:52px 24px;text-align:center;cursor:pointer;transition:.18s;
    box-shadow:var(--shadow)}
 #drop:hover,#drop.hover{border-color:var(--accent);background:var(--accent-soft)}
@@ -42,7 +71,8 @@ h1{font-family:'Noto Serif KR',serif;font-size:2rem;font-weight:700;
 #drop .t2{font-size:.85rem;color:var(--muted)}
 #drop.busy{pointer-events:none;opacity:.55}
 #files{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
-#files li{display:flex;align-items:center;gap:10px;background:var(--surface);
+#files li{display:flex;align-items:center;gap:10px;background:var(--glass);
+   backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
    border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:.92rem}
 #files .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #files .size{color:var(--muted);font-size:.82rem;flex:none}
@@ -51,15 +81,21 @@ h1{font-family:'Noto Serif KR',serif;font-size:2rem;font-weight:700;
 #files .rm:hover{background:var(--surface2);color:var(--text)}
 #files .doc{color:var(--accent);flex:none}
 #go{width:100%;margin-top:16px;padding:14px;font-size:1.02rem;font-weight:700;
-   font-family:inherit;border:0;border-radius:12px;background:var(--accent);
+   font-family:inherit;border:0;border-radius:12px;
+   background:linear-gradient(135deg,#E08663,#C8623F);
+   box-shadow:0 6px 18px rgba(217,119,87,.30);
    color:#fff;cursor:pointer;transition:.15s;display:flex;align-items:center;
    justify-content:center;gap:10px}
-#go:hover:not(:disabled){background:var(--accent-strong)}
-#go:disabled{background:var(--border);color:var(--muted);cursor:default}
+#go:hover:not(:disabled){transform:translateY(-1px);
+   box-shadow:0 9px 24px rgba(217,119,87,.38)}
+#go:disabled{background:var(--border);color:var(--muted);cursor:default;
+   box-shadow:none;transform:none}
 .spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);
    border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite;flex:none}
 @keyframes sp{to{transform:rotate(360deg)}}
-#log{background:var(--surface2);border:1px solid var(--border);border-radius:12px;
+#log{background:var(--glass2);backdrop-filter:blur(6px);
+   -webkit-backdrop-filter:blur(6px);
+   border:1px solid var(--border);border-radius:12px;
    padding:12px 16px;font-family:ui-monospace,Consolas,monospace;font-size:.8rem;
    white-space:pre-wrap;min-height:2.4em;max-height:200px;overflow-y:auto;
    margin-top:16px;color:var(--muted)}
@@ -76,7 +112,7 @@ footer a{color:var(--muted)}
 </style>
 </head>
 <body>
-<h1>수학 문항 검수</h1>
+<div class="brand"><div class="mark">∑</div><h1>수학 문항 검수</h1></div>
 <p class="sub">정답↔해설 SymPy 검산 · 조판 결함 · 쪽 위치 · 쌍둥이문항 교차</p>
 <div class="privacy">
   <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm2 5H6V4.5a2 2 0 1 1 4 0V6Z"/></svg>
