@@ -28,6 +28,12 @@ hwpx (표 기반 문항 은행)
 
 ## 사용법
 
+**가장 쉬운 방법 (Windows):** hwpx 파일 1~2개를 `검수실행.bat` 위에 끌어다 놓으면
+파싱→검수→보고서까지 자동 실행된다. 2개면 첫 번째=평가(쌍둥이 필드 보유측), 두 번째=일반.
+결과는 원본 옆에 `*_report.json`으로 생성. (bat 파일은 한국어 Windows용 CP949 인코딩)
+
+명령줄:
+
 ```bash
 # 1) hwpx → items.json
 python scripts/hwpx_items.py 문항은행.hwpx --out items.json
@@ -46,7 +52,15 @@ python scripts/twin_check.py 평가_items.json 일반_items.json
 python scripts/hml2sympy.py --selftest
 ```
 
-요구사항: Python 3.9+, `lxml`, `sympy>=1.14`
+요구사항: Python 3.9+, `pip install lxml sympy`
+
+새 PC 셋업은 세 줄이면 된다:
+
+```bash
+git clone https://github.com/hclee-source/hwpx-math-check
+pip install lxml sympy
+# 이후 검수실행.bat 에 hwpx 드래그&드롭
+```
 
 ## hml2sympy가 처리하는 문법
 
