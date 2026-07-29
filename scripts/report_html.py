@@ -174,45 +174,65 @@ def _card_body(f, item, items):
 
 
 CSS = """
-body{font-family:'Malgun Gothic',sans-serif;max-width:940px;margin:24px auto;
-     padding:0 16px;color:#222;line-height:1.6}
-h1{font-size:1.4em;border-bottom:2px solid #333;padding-bottom:6px}
-h2{font-size:1.1em;margin-top:28px}
-.muted{color:#7f8c8d;font-size:.88em}
-.cards{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
-.card{border:1px solid #ddd;border-radius:8px;padding:10px 16px;min-width:110px;
-      text-align:center;background:#fafafa}
-.card b{display:block;font-size:1.5em}
-.ok{color:#1e8449}.warn{color:#b9770e}
-.empty{background:#eafaf1;border:1px solid #a9dfbf;border-radius:8px;
-       padding:12px 16px;color:#1e8449;font-weight:bold}
-details.finding{border:1px solid #ddd;border-left:6px solid #999;border-radius:8px;
-       margin:10px 0;background:#fff}
-details.finding[data-sev=high]{border-left-color:#c0392b}
-details.finding[data-sev=medium]{border-left-color:#b9770e}
-details.finding>summary{cursor:pointer;padding:10px 14px;font-weight:bold;
-       list-style-position:inside}
-details.finding>summary .sev{padding:1px 8px;border-radius:10px;color:#fff;
-       font-size:.8em;margin-right:6px}
-details.finding>summary .page{background:#2471a3;color:#fff;padding:1px 8px;
-       border-radius:10px;font-size:.8em;margin-right:6px;font-weight:bold}
-details.finding[data-sev=high] .sev{background:#c0392b}
-details.finding[data-sev=medium] .sev{background:#b9770e}
-details.finding[data-sev=low] .sev{background:#7f8c8d}
-.body{padding:2px 16px 12px}
-.row{margin:8px 0}
-.quote{background:#f7f7f7;border-radius:6px;padding:8px 12px;margin:4px 0;
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+:root{--bg:#FAF9F5;--surface:#FFF;--surface2:#F0EEE6;--text:#1F1E1D;
+  --muted:#73726C;--border:#E4E1D5;--accent:#D97757;--ok:#5F7D50;
+  --warn:#A9741B;--bad:#B3382C;
+  --shadow:0 1px 2px rgba(31,30,29,.05),0 4px 14px rgba(31,30,29,.04)}
+*{box-sizing:border-box}
+body{font-family:'Pretendard Variable',Pretendard,-apple-system,sans-serif;
+     background:var(--bg);max-width:900px;margin:0 auto;padding:36px 20px 48px;
+     color:var(--text);line-height:1.65;-webkit-font-smoothing:antialiased}
+h1{font-family:'Noto Serif KR',serif;font-size:1.6em;font-weight:700;
+   letter-spacing:-.01em;margin:0 0 4px}
+h2{font-size:1.05em;font-weight:700;margin:34px 0 10px}
+.muted{color:var(--muted);font-size:.86em}
+.cards{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+.card{border:1px solid var(--border);border-radius:14px;padding:14px 20px;
+      min-width:118px;text-align:center;background:var(--surface);
+      box-shadow:var(--shadow)}
+.card b{display:block;font-size:1.65em;font-weight:800;letter-spacing:-.02em}
+.card{font-size:.85em;color:var(--muted)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}
+.empty{background:#EFF3EA;border:1px solid #CBDABE;border-radius:14px;
+       padding:14px 18px;color:var(--ok);font-weight:700}
+details.finding{border:1px solid var(--border);border-left:5px solid var(--muted);
+       border-radius:14px;margin:10px 0;background:var(--surface);
+       box-shadow:var(--shadow);overflow:hidden}
+details.finding[data-sev=high]{border-left-color:var(--bad)}
+details.finding[data-sev=medium]{border-left-color:var(--warn)}
+details.finding>summary{cursor:pointer;padding:12px 16px;font-weight:600;
+       list-style-position:inside;transition:.12s}
+details.finding>summary:hover{background:var(--surface2)}
+details.finding>summary .sev,details.finding>summary .page{
+       display:inline-block;padding:1px 10px;border-radius:999px;color:#fff;
+       font-size:.76em;margin-right:7px;font-weight:700;vertical-align:1px}
+details.finding[data-sev=high] .sev{background:var(--bad)}
+details.finding[data-sev=medium] .sev{background:var(--warn)}
+details.finding[data-sev=low] .sev{background:var(--muted)}
+details.finding>summary .page{background:var(--accent)}
+.body{padding:2px 18px 14px}
+.row{margin:9px 0}
+.quote{background:var(--surface2);border-radius:10px;padding:9px 14px;margin:5px 0;
        font-size:.95em;word-break:break-all}
-mark{background:#ffd6d6;color:#a00;padding:1px 3px;border-radius:3px;font-weight:bold}
-.eq{font-family:'Cambria Math','Segoe UI',serif;background:#eef4fb;
-    padding:0 4px;border-radius:3px}
-.fix{color:#1e8449;margin-top:4px}
-.hint{background:#fff8e6;border:1px solid #f0dfa8;border-radius:6px;
-      padding:6px 12px;margin-top:8px;font-size:.92em}
-.loclist{font-family:Consolas,monospace;font-size:.88em;word-break:break-all}
-table.mini{border-collapse:collapse;margin:6px 0;font-size:.92em}
-table.mini th,table.mini td{border:1px solid #ccc;padding:4px 10px}
-table.mini tr.bad td{background:#ffd6d6;font-weight:bold}
+mark{background:#F6D3CB;color:#8F2A1E;padding:1px 4px;border-radius:4px;
+     font-weight:700}
+.eq{font-family:'Cambria Math','STIX Two Math',serif;background:#EBE7DB;
+    padding:0 5px;border-radius:4px}
+.fix{color:var(--ok);margin-top:5px;font-weight:600}
+.hint{background:#FBF3E3;border:1px solid #EBDCB8;border-radius:10px;
+      padding:8px 14px;margin-top:10px;font-size:.9em}
+.loclist{font-family:ui-monospace,Consolas,monospace;font-size:.86em;
+      word-break:break-all}
+table.mini{border-collapse:separate;border-spacing:0;margin:8px 0;font-size:.92em;
+      border:1px solid var(--border);border-radius:10px;overflow:hidden}
+table.mini th,table.mini td{border-bottom:1px solid var(--border);
+      border-right:1px solid var(--border);padding:6px 14px}
+table.mini th{background:var(--surface2)}
+table.mini tr:last-child td{border-bottom:0}
+table.mini th:last-child,table.mini td:last-child{border-right:0}
+table.mini tr.bad td{background:#F6D3CB;font-weight:700}
 """
 
 

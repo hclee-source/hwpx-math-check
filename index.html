@@ -3,49 +3,117 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>수학 문항 검수 — hwpx</title>
+<title>수학 문항 검수</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700&display=swap" rel="stylesheet">
 <style>
-body{font-family:'Malgun Gothic',sans-serif;max-width:860px;margin:28px auto;
-     padding:0 16px;color:#222;line-height:1.55}
-h1{font-size:1.35em;border-bottom:2px solid #333;padding-bottom:6px}
-.muted{color:#7f8c8d;font-size:.9em}
-#drop{border:2px dashed #999;border-radius:12px;padding:44px 16px;text-align:center;
-      color:#555;cursor:pointer;margin:16px 0;transition:.15s;background:#fafafa}
-#drop.hover{border-color:#1e8449;background:#eafaf1;color:#1e8449}
-#files{margin:8px 0;padding-left:20px}
-#files li{font-family:Consolas,monospace;font-size:.9em}
-#go{width:100%;padding:12px;font-size:1.05em;font-weight:bold;border:0;
-    border-radius:8px;background:#1e8449;color:#fff;cursor:pointer}
-#go:disabled{background:#bbb;cursor:default}
-#log{background:#f4f4f4;border-radius:8px;padding:10px 14px;font-family:Consolas,monospace;
-     font-size:.85em;white-space:pre-wrap;min-height:2em;max-height:220px;overflow-y:auto}
-#frame{width:100%;height:75vh;border:1px solid #ccc;border-radius:8px;margin-top:10px}
-#dl{display:inline-block;margin:10px 0;padding:8px 16px;background:#2471a3;color:#fff;
-    border-radius:6px;text-decoration:none}
+:root{
+  --bg:#FAF9F5; --surface:#FFFFFF; --surface2:#F0EEE6;
+  --text:#1F1E1D; --muted:#73726C; --border:#E4E1D5;
+  --accent:#D97757; --accent-strong:#C15F3C; --accent-soft:#FBEEE8;
+  --ok:#6E8B5E; --shadow:0 1px 3px rgba(31,30,29,.06),0 8px 24px rgba(31,30,29,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#262624; --surface:#30302E; --surface2:#3A3937;
+    --text:#F5F4EF; --muted:#A6A39A; --border:#45443F;
+    --accent:#D97757; --accent-strong:#E08663; --accent-soft:#3E322C;
+    --ok:#9DB88D; --shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+}
+*{box-sizing:border-box}
+body{font-family:'Pretendard Variable',Pretendard,-apple-system,sans-serif;
+     background:var(--bg);color:var(--text);max-width:720px;margin:0 auto;
+     padding:48px 20px 60px;line-height:1.6;-webkit-font-smoothing:antialiased}
+h1{font-family:'Noto Serif KR',serif;font-size:2rem;font-weight:700;
+   letter-spacing:-.01em;margin:0 0 6px}
+.sub{color:var(--muted);font-size:.95rem;margin:0 0 8px}
+.privacy{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);
+   border:1px solid var(--border);border-radius:999px;padding:4px 14px;
+   font-size:.82rem;color:var(--muted);margin-bottom:28px}
+.privacy svg{width:13px;height:13px;flex:none}
+#drop{background:var(--surface);border:1.5px dashed var(--border);border-radius:16px;
+   padding:52px 24px;text-align:center;cursor:pointer;transition:.18s;
+   box-shadow:var(--shadow)}
+#drop:hover,#drop.hover{border-color:var(--accent);background:var(--accent-soft)}
+#drop svg{width:40px;height:40px;color:var(--accent);margin-bottom:12px}
+#drop .t1{font-size:1.05rem;font-weight:600;margin-bottom:4px}
+#drop .t2{font-size:.85rem;color:var(--muted)}
+#drop.busy{pointer-events:none;opacity:.55}
+#files{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+#files li{display:flex;align-items:center;gap:10px;background:var(--surface);
+   border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:.92rem}
+#files .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#files .size{color:var(--muted);font-size:.82rem;flex:none}
+#files .rm{margin-left:auto;flex:none;border:0;background:none;color:var(--muted);
+   cursor:pointer;font-size:1.05rem;padding:2px 6px;border-radius:6px}
+#files .rm:hover{background:var(--surface2);color:var(--text)}
+#files .doc{color:var(--accent);flex:none}
+#go{width:100%;margin-top:16px;padding:14px;font-size:1.02rem;font-weight:700;
+   font-family:inherit;border:0;border-radius:12px;background:var(--accent);
+   color:#fff;cursor:pointer;transition:.15s;display:flex;align-items:center;
+   justify-content:center;gap:10px}
+#go:hover:not(:disabled){background:var(--accent-strong)}
+#go:disabled{background:var(--border);color:var(--muted);cursor:default}
+.spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);
+   border-top-color:#fff;border-radius:50%;animation:sp .8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+#log{background:var(--surface2);border:1px solid var(--border);border-radius:12px;
+   padding:12px 16px;font-family:ui-monospace,Consolas,monospace;font-size:.8rem;
+   white-space:pre-wrap;min-height:2.4em;max-height:200px;overflow-y:auto;
+   margin-top:16px;color:var(--muted)}
+#result{margin-top:24px}
+#dl{display:inline-flex;align-items:center;gap:8px;margin-bottom:12px;
+   padding:9px 20px;background:var(--surface);border:1px solid var(--border);
+   border-radius:999px;color:var(--text);text-decoration:none;font-size:.9rem;
+   font-weight:600;transition:.15s}
+#dl:hover{border-color:var(--accent);color:var(--accent)}
+#frame{width:100%;height:76vh;border:1px solid var(--border);border-radius:16px;
+   background:#fff;box-shadow:var(--shadow)}
+footer{margin-top:36px;text-align:center;font-size:.8rem;color:var(--muted)}
+footer a{color:var(--muted)}
 </style>
 </head>
 <body>
-<h1>수학 문항 검수 <span class="muted">hwpx 문항 은행</span></h1>
-<p class="muted">정답↔해설 SymPy 검산 · 조판 결함 · 쌍둥이문항 교차 —
-모든 처리는 <b>이 브라우저 안에서만</b> 실행되며 파일이 서버로 전송되지 않습니다.</p>
+<h1>수학 문항 검수</h1>
+<p class="sub">정답↔해설 SymPy 검산 · 조판 결함 · 쪽 위치 · 쌍둥이문항 교차</p>
+<div class="privacy">
+  <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm2 5H6V4.5a2 2 0 1 1 4 0V6Z"/></svg>
+  모든 처리는 브라우저 안에서만 — 파일이 서버로 전송되지 않습니다
+</div>
 
-<div id="drop">hwpx 또는 items.json 파일 1~2개를 여기에 끌어다 놓거나 클릭해서 선택
-<br><span class="muted">2개면 쌍둥이 교차 검수 포함 · 순서 무관</span></div>
+<div id="drop">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+       stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>
+  </svg>
+  <div class="t1">hwpx 파일을 끌어다 놓거나 클릭해서 선택</div>
+  <div class="t2">1~2개 · 2개면 쌍둥이 교차 검수 포함 · items.json도 가능</div>
+</div>
 <input type="file" id="fi" multiple accept=".hwpx,.json" hidden>
 <ul id="files"></ul>
 <button id="go" disabled>검수 시작</button>
 <div id="log">엔진 준비 중… (최초 1회, 이후엔 캐시로 빨라집니다)</div>
 <div id="result" hidden>
-  <a id="dl" download="검수보고서.html">보고서 파일로 저장</a>
+  <a id="dl" download="검수보고서.html">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+    보고서 파일로 저장</a>
   <iframe id="frame"></iframe>
 </div>
+<footer><a href="https://github.com/hclee-source/hwpx-math-check">hwpx-math-check</a>
+ · 1차 기계 검수 — 최종 판단은 사람이 합니다</footer>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const PY_FILES = ['hml2sympy.py','eq_answer_check.py','twin_check.py',
                   'math_review.py','hwpx_items.py','report_html.py'];
-let picked = [], pyReady = null;
+let picked = [], pyReady = null, running = false;
 
 function log(msg, replace=false){
   const el = $('log');
@@ -72,11 +140,20 @@ async function boot(){
 }
 pyReady = boot().catch(e => { log('엔진 로딩 실패: ' + e); });
 
+function renderFiles(){
+  $('files').innerHTML = picked.map((f, i) =>
+    `<li><svg class="doc" width="16" height="16" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+     <span class="name">${f.name}</span>
+     <span class="size">${(f.size/1024).toFixed(0)} KB</span>
+     <button class="rm" data-i="${i}" title="제거">✕</button></li>`).join('');
+  document.querySelectorAll('#files .rm').forEach(b =>
+    b.onclick = () => { picked.splice(+b.dataset.i, 1); renderFiles(); });
+  $('go').disabled = picked.length === 0 || running;
+}
 function setFiles(list){
   picked = [...list].filter(f => /\.(hwpx|json)$/i.test(f.name)).slice(0, 2);
-  $('files').innerHTML = picked.map(f =>
-    `<li>${f.name} <span class="muted">(${(f.size/1024).toFixed(0)} KB)</span></li>`).join('');
-  $('go').disabled = picked.length === 0;
+  renderFiles();
   if (picked.length) log(`파일 ${picked.length}개 선택됨. [검수 시작]을 누르세요.`);
 }
 $('drop').onclick = () => $('fi').click();
@@ -89,7 +166,11 @@ $('drop').ondrop = e => {
 };
 
 $('go').onclick = async () => {
-  $('go').disabled = true; $('result').hidden = true;
+  running = true;
+  $('go').disabled = true;
+  $('go').innerHTML = '<span class="spin"></span>검수 중…';
+  $('drop').classList.add('busy');
+  $('result').hidden = true;
   try {
     const py = await pyReady;
     if (!py) throw new Error('엔진이 준비되지 않았습니다. 새로고침 후 다시 시도하세요.');
@@ -151,9 +232,13 @@ report_html.render(findings, stats, details, srcs, items=items_map)
     $('frame').srcdoc = html;
     $('dl').href = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
     $('result').hidden = false;
+    $('result').scrollIntoView({behavior: 'smooth'});
   } catch (e) {
     log('오류: ' + e);
   } finally {
+    running = false;
+    $('go').textContent = '검수 시작';
+    $('drop').classList.remove('busy');
     $('go').disabled = picked.length === 0;
   }
 };
