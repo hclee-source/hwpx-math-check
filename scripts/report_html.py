@@ -194,6 +194,8 @@ details.finding>summary{cursor:pointer;padding:10px 14px;font-weight:bold;
        list-style-position:inside}
 details.finding>summary .sev{padding:1px 8px;border-radius:10px;color:#fff;
        font-size:.8em;margin-right:6px}
+details.finding>summary .page{background:#2471a3;color:#fff;padding:1px 8px;
+       border-radius:10px;font-size:.8em;margin-right:6px;font-weight:bold}
 details.finding[data-sev=high] .sev{background:#c0392b}
 details.finding[data-sev=medium] .sev{background:#b9770e}
 details.finding[data-sev=low] .sev{background:#7f8c8d}
@@ -232,9 +234,11 @@ def render(findings, stats, details, sources, items=None):
             sev = f.get('sev', 'low')
             item = items.get(str(f.get('loc', '')))
             body = _card_body(f, item, items)
+            page = (item or {}).get('page')
+            pg = f'<span class="page">{page}쪽</span>' if page else ''
             p.append(
                 f'<details class="finding" data-sev="{sev}"{" open" if i < 3 else ""}>'
-                f'<summary><span class="sev">{SEV_KO.get(sev, sev)}</span>'
+                f'<summary><span class="sev">{SEV_KO.get(sev, sev)}</span>{pg}'
                 f'{_e(f.get("loc", ""))} — {_e(CODE_DESC.get(f["code"], f["code"]))}'
                 f'<span class="muted"> · #{f.get("no", "")} 정답 {f.get("ans", "")}'
                 f' · {_e(f["code"])}</span></summary>'
@@ -269,13 +273,16 @@ def render(findings, stats, details, sources, items=None):
             for loc in locs:
                 it = items.get(str(loc))
                 tail = ''
+                pg = ''
                 if it:
+                    if it.get('page'):
+                        pg = f'<span class="page">{it["page"]}쪽</span>'
                     lines = [l for l in it.get('expl', '').split('\n') if l.strip()]
                     if lines:
                         tail = (f'<div class="row">해설 마지막 줄:'
                                 f'<div class="quote">{pretty_text(lines[-1])}</div></div>')
                 p.append(f'<details class="finding" data-sev="low">'
-                         f'<summary><span class="sev">{_e(why)}</span>'
+                         f'<summary><span class="sev">{_e(why)}</span>{pg}'
                          f'{_e(loc)}</summary><div class="body">{tail}</div></details>')
 
     tw = stats.get('쌍둥이')

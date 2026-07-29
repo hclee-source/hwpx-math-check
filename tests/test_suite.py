@@ -177,7 +177,48 @@ def t_report():
     check('rp.빈보고서', '결함 후보 없음' in html2)
 
 
-# ── 5. 실데이터 회귀 (data/ 있을 때만) ────────────────────────
+# ── 5. hwpx 쪽 계산 (합성 hwpx) ───────────────────────────────
+
+def _mini_tbl(item_id):
+    def row(k, v):
+        return (f'<tr><tc><p><run><t>{k}</t></run></p></tc>'
+                f'<tc><p><run><t>{v}</t></run></p></tc></tr>')
+    return ('<tbl>' + row('문항id', item_id) + row('정답', '1')
+            + row('선택지1', '1') + '</tbl>')
+
+
+def t_pages():
+    import io
+    import json as _j
+    import tempfile
+    import zipfile
+    import hwpx_items
+    # 문단 vertpos: 0 → 5000 (1쪽, 표A) → 0 리셋 (2쪽, 표B) → 400
+    sec = ('<sec>'
+           '<p><linesegarray><lineseg vertpos="0"/></linesegarray></p>'
+           '<p><linesegarray><lineseg vertpos="5000"/></linesegarray>'
+           f'<run>{_mini_tbl("TG0C1S0Aa1-01")}</run></p>'
+           '<p><linesegarray><lineseg vertpos="0"/></linesegarray>'
+           f'<run>{_mini_tbl("TG0C1S0Aa1-02")}</run></p>'
+           '<p><linesegarray><lineseg vertpos="400"/></linesegarray></p>'
+           '</sec>')
+    tmp = tempfile.NamedTemporaryFile(suffix='.hwpx', delete=False)
+    with zipfile.ZipFile(tmp, 'w') as z:
+        z.writestr('Contents/section0.xml', sec)
+    tmp.close()
+    recs, skipped = hwpx_items.parse(tmp.name)
+    data = hwpx_items.to_items_json(recs, 't')
+    pages = [i['page'] for i in data['items']]
+    check('pg.쪽계산', pages == [1, 2], str(pages))
+    html = report_html.render(
+        [{'code': 'EQ_UNBALANCED', 'sev': 'high', 'no': 1,
+          'loc': 'TG0C1S0Aa1-02', 'ans': 1, 'found_in': [], 'want': 'x{', 'tail': ''}],
+        {}, {}, ['t'], items={i['loc']: i for i in data['items']})
+    check('pg.보고서표시', '2쪽' in html)
+    os.unlink(tmp.name)
+
+
+# ── 6. 실데이터 회귀 (data/ 있을 때만) ────────────────────────
 
 def t_regression():
     import json
@@ -204,7 +245,7 @@ def t_regression():
 if __name__ == '__main__':
     for t in (t_transpile, t_eq_ok_value, t_eq_wrong_answer, t_eq_range,
               t_eq_dup, t_eq_equation_options, t_eq_orphan_unbalanced,
-              t_eq_pm, t_twin, t_report, t_regression):
+              t_eq_pm, t_twin, t_report, t_pages, t_regression):
         print(t.__name__)
         try:
             t()

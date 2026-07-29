@@ -74,27 +74,78 @@ def _own_cells(tr):
             yield tc
 
 
+def _first_vertpos(p):
+    """문단 직속 linesegarray의 첫 lineseg vertpos (레이아웃 캐시)."""
+    for ch in p:
+        if ln(ch) == 'linesegarray':
+            for seg in ch:
+                if ln(seg) == 'lineseg':
+                    try:
+                        return int(seg.get('vertpos', 0))
+                    except ValueError:
+                        return None
+    return None
+
+
+def _top_tables(p):
+    """이 문단 안의 최상위 표만 (중첩 표 제외)."""
+    for tbl in p.iter():
+        if ln(tbl) != 'tbl':
+            continue
+        anc, top = tbl.getparent(), True
+        while anc is not None and anc is not p:
+            if ln(anc) == 'tbl':
+                top = False
+                break
+            anc = anc.getparent()
+        if top:
+            yield tbl
+
+
+def _parse_table(tbl):
+    rec = {}
+    for tr in _own_rows(tbl):
+        cells = list(_own_cells(tr))
+        if len(cells) < 2:
+            continue
+        key = _cell_text(cells[0], eq_wrap=False).strip()
+        if key in FIELDS:
+            rec[key] = _cell_text(cells[1])
+    if '문항id' not in rec or not rec.get('문항id', '').strip():
+        return None
+    return rec
+
+
 def parse(path):
+    """표 파싱 + 쪽 계산.
+
+    쪽 번호는 한글이 저장 시 남긴 레이아웃 캐시(lineseg vertpos)로 계산한다:
+    최상위 문단의 vertpos가 직전보다 작아지면 새 쪽. 한글에서 저장한 파일 기준이며,
+    XML을 스크립트로 고친 뒤에는 캐시가 낡으므로 한글에서 다시 저장해야 정확하다.
+    """
     items, skipped = [], 0
+    page = 0
     with zipfile.ZipFile(path) as z:
         secs = sorted(n for n in z.namelist() if re.match(r'Contents/section\d+\.xml', n))
         for sec in secs:
             root = etree.fromstring(z.read(sec))
-            for tbl in root.iter():
-                if ln(tbl) != 'tbl':
+            page += 1                      # 구역 시작 = 새 쪽
+            prev = None
+            for p in root:
+                if ln(p) != 'p':
                     continue
-                rec = {}
-                for tr in _own_rows(tbl):
-                    cells = list(_own_cells(tr))
-                    if len(cells) < 2:
+                v = _first_vertpos(p)
+                if v is not None:
+                    if prev is not None and v < prev:
+                        page += 1
+                    prev = v
+                for tbl in _top_tables(p):
+                    rec = _parse_table(tbl)
+                    if rec is None:
+                        skipped += 1
                         continue
-                    key = _cell_text(cells[0], eq_wrap=False).strip()
-                    if key in FIELDS:
-                        rec[key] = _cell_text(cells[1])
-                if '문항id' not in rec or not rec.get('문항id', '').strip():
-                    skipped += 1
-                    continue
-                items.append(rec)
+                    rec['_page'] = page
+                    items.append(rec)
     return items, skipped
 
 
@@ -111,7 +162,7 @@ def to_items_json(recs, source):
         out.append({
             'no': i, 'q': r.get('본문', '').strip(), 'opts': opts,
             'answer': ans, 'answer_raw': raw, 'expl': expl,
-            'loc': r.get('문항id', ''),
+            'loc': r.get('문항id', ''), 'page': r.get('_page'),
             'meta': {k: r.get(k, '') for k in ('문항id', '지식단위', '난이도', '학습행동영역', '쌍둥이문항')},
         })
     return {'source': source, 'n': len(out), 'items': out}
