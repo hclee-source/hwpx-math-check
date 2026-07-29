@@ -265,6 +265,16 @@ def t_extra():
     check('ex.완전중복', any(x['code'] == 'ITEM_DUP_EXACT' for x in ex2['findings']),
           str([x['code'] for x in ex2['findings']]))
 
+    # 표기 검사 정밀도: LEFT{ 는 구분자라 오탐 금지, != 는 줄 단위로 잡아야 함
+    t3 = [item(1, ['$1$'] * 5, 1,
+               '$4 LEFT { (x-3) ^{2} RIGHT } =9$\n'
+               '(ⅱ) $a != 0$, $b!=0$일 때\n따라서 $1$', loc='ZG0C1S0Aa1-01')]
+    ex3 = extra_checks.analyze({'items': t3})
+    check('ex.LEFT중괄호오탐없음', '중괄호 안 여분 공백' not in ex3['style'],
+          str(ex3['style'].keys()))
+    check('ex.연산자공백줄단위', '비교 연산자 공백 불일치' in ex3['style'],
+          str(ex3['style'].keys()))
+
 
 # ── 6. 실데이터 회귀 (data/ 있을 때만) ────────────────────────
 
@@ -284,6 +294,8 @@ def t_regression():
     check('rg.중복후보', len(ex_gn['dups']) >= 3, len(ex_gn['dups']))
     check('rg.카이제곱', ex_gn['stats']['chi2'] == 9.85 and ex_gn['stats']['skewed'],
           str(ex_gn['stats']['chi2']))
+    check('rg.노출편향과다아님', ex_gn['stats']['longest_n'] <= 8,
+          str(ex_gn['stats']['longest_n']))
     check('rg.메타정합통과', len(ex_gn['passed']) == 7, str(ex_gn['passed']))
     orphan = [x for x in findings if x['code'] == 'EQ_ORPHAN_OP']
     check('rg.고아연산자2', len(orphan) == 2 and

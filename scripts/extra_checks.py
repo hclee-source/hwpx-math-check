@@ -24,7 +24,10 @@ STYLE = [
     ('root 표기', re.compile(r'\broot'), 'sqrt 표기로 통일 필요'),
     ('아래첨자 민형식 a_1', re.compile(r'[A-Za-z]_\d'), '다른 곳은 a _{1} 형식'),
     ('위첨자 민형식 a^2', re.compile(r'\^\d'), '다른 곳은 a ^{2} 형식'),
-    ('중괄호 안 여분 공백', re.compile(r'\{\s+\S'), '{ 1} over { 2} 형태'),
+    # LEFT{ / RIGHT{ 는 구분자라 공백이 정상 — 분수·첨자 중괄호만 본다
+    ('중괄호 안 여분 공백',
+     re.compile(r'(?<!LEFT)(?<!RIGHT)(?<!LEFT )(?<!RIGHT )\{[ \t]+\S'),
+     '{ 1} over { 2} 형태'),
     ('비교식 불필요 중괄호',
      re.compile(r'[<>]\s*\{\s*-?\d+(?:\.\d+)?\s*\}(?!\s*(?:over|\^|_|/))'),
      'k<{-1} 형태 — 정규화 시 뭉개질 위험'),
@@ -98,8 +101,26 @@ def _style(items):
     types = {}
     for it in items:
         for fn, tx in _fields(it):
+            # 비교 연산자 공백 불일치는 줄 단위로 본다 — $a != 0$, $b!=0$ 처럼
+            # 같은 줄의 서로 다른 수식에 걸쳐 혼용되는 게 실제 사례다
+            for line in (tx or '').split('\n'):
+                eqs = ' ⟂ '.join(EQ.findall(line))
+                if re.search(r'\S(?:!=|<=|>=)', eqs) and \
+                        re.search(r'\s(?:!=|<=|>=)\s', eqs):
+                    t = types.setdefault('비교 연산자 공백 불일치',
+                                         {'hint': '같은 줄에서 a != 0 과 b!=0 혼용',
+                                          'n': 0, 'locs': [], 'example': ''})
+                    t['n'] += 1
+                    if it['loc'] not in t['locs']:
+                        t['locs'].append(it['loc'])
+                    t['example'] = t['example'] or eqs.strip()[:50]
             for eq in EQ.findall(tx or ''):
+                mixed = any(re.search(r'\^\s*\{', eq) and re.search(r'\^\d', eq)
+                            for _ in (0,))
                 for name, pat, hint in STYLE:
+                    # 한 수식 안에 두 표기가 섞인 경우는 '혼용'으로만 계상
+                    if mixed and name == '위첨자 민형식 a^2':
+                        continue
                     m = pat.search(eq)
                     if m:
                         t = types.setdefault(name, {'hint': hint, 'n': 0,
@@ -121,15 +142,6 @@ def _style(items):
                         if it['loc'] not in t['locs']:
                             t['locs'].append(it['loc'])
                         t['example'] = t['example'] or eq.strip()[:50]
-                # 비교 연산자 좌우 공백 불일치 (a != 0 과 b!=0 혼용)
-                if re.search(r'\S(?:!=|<=|>=)', eq) and re.search(r'\s(?:!=|<=|>=)\s', eq):
-                    t = types.setdefault('비교 연산자 공백 불일치',
-                                         {'hint': '한 수식 안에서 a != 0 과 b!=0 혼용',
-                                          'n': 0, 'locs': [], 'example': ''})
-                    t['n'] += 1
-                    if it['loc'] not in t['locs']:
-                        t['locs'].append(it['loc'])
-                    t['example'] = t['example'] or eq.strip()[:50]
                 # 보기 수식이 순수 숫자인데 꼬리 공백/백틱 → 우측 정렬 어긋남
                 if fn.startswith('보기') and re.fullmatch(r'[\s`~]*\d+[\s`~]+', eq):
                     t = types.setdefault('수식 끝 여분 공백',
@@ -194,9 +206,19 @@ def _stats(items):
         e = n / 5
         chi2 = round(sum((v - e) ** 2 / e for v in dist.values()), 2)
         skewed = chi2 > 9.488          # df=4, α=0.05
+    def vis_len(o):
+        """조판 마크업을 걷어낸 실제 길이 — 스크립트 길이로 재면 노이즈가 낀다."""
+        s = re.sub(r'\$', '', o or '')
+        s = re.sub(r'\b(it|rm|LEFT|RIGHT|over|sqrt|TIMES|CDOT)\b', 'x', s)
+        return len(re.sub(r'[\s`~{}]', '', s))
+
+    # ㄱ/ㄴ/ㄷ 나열형은 마지막 보기가 늘 가장 길다 — 편향 신호가 아니다
+    def is_list_type(it):
+        return sum(1 for o in it['opts'] if re.search(r'[ㄱ-ㅎ]', o)) >= 3
+
     longest = [it['loc'] for it in items if it.get('answer')
-               and len(it['opts']) == 5
-               and all(len(it['opts'][it['answer'] - 1]) > len(o)
+               and len(it['opts']) == 5 and not is_list_type(it)
+               and all(vis_len(it['opts'][it['answer'] - 1]) > vis_len(o)
                        for k, o in enumerate(it['opts']) if k != it['answer'] - 1)]
     return {'dist': dist, 'n': n, 'chi2': chi2, 'skewed': skewed,
             'longest_n': len(longest), 'longest': longest[:10]}

@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>수학 문항 검수</title>
+<title>?섑븰 臾명빆 寃??/title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700&display=swap" rel="stylesheet">
@@ -112,11 +112,11 @@ footer a{color:var(--muted)}
 </style>
 </head>
 <body>
-<div class="brand"><div class="mark">∑</div><h1>수학 문항 검수</h1></div>
-<p class="sub">정답↔해설 SymPy 검산 · 조판 결함 · 쪽 위치 · 쌍둥이문항 교차</p>
+<div class="brand"><div class="mark">??/div><h1>?섑븰 臾명빆 寃??/h1></div>
+<p class="sub">?뺣떟?뷀빐??SymPy 寃??쨌 議고뙋 寃고븿 쨌 履??꾩튂 쨌 ?띾뫁?대Ц??援먯감</p>
 <div class="privacy">
   <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3.5 3.5 0 0 0-3.5 3.5V6H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 14h8a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 12 6h-.5V4.5A3.5 3.5 0 0 0 8 1Zm2 5H6V4.5a2 2 0 1 1 4 0V6Z"/></svg>
-  모든 처리는 브라우저 안에서만 — 파일이 서버로 전송되지 않습니다
+  紐⑤뱺 泥섎━??釉뚮씪?곗? ?덉뿉?쒕쭔 ???뚯씪???쒕쾭濡??꾩넚?섏? ?딆뒿?덈떎
 </div>
 
 <div id="drop">
@@ -125,29 +125,29 @@ footer a{color:var(--muted)}
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
     <path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>
   </svg>
-  <div class="t1">hwpx 파일을 끌어다 놓거나 클릭해서 선택</div>
-  <div class="t2">1~2개 · 2개면 쌍둥이 교차 검수 포함 · items.json도 가능</div>
+  <div class="t1">hwpx ?뚯씪???뚯뼱???볤굅???대┃?댁꽌 ?좏깮</div>
+  <div class="t2">1~2媛?쨌 2媛쒕㈃ ?띾뫁??援먯감 寃???ы븿 쨌 items.json??媛??/div>
 </div>
 <input type="file" id="fi" multiple accept=".hwpx,.json" hidden>
 <ul id="files"></ul>
-<button id="go" disabled>검수 시작</button>
-<div id="log">엔진 준비 중… (최초 1회, 이후엔 캐시로 빨라집니다)</div>
+<button id="go" disabled>寃???쒖옉</button>
+<div id="log">?붿쭊 以鍮?以묅?(理쒖큹 1?? ?댄썑??罹먯떆濡?鍮⑤씪吏묐땲??</div>
 <div id="result" hidden>
-  <a id="dl" download="검수보고서.html">
+  <a id="dl" download="寃?섎낫怨좎꽌.html">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-    보고서 파일로 저장</a>
+    蹂닿퀬???뚯씪濡????/a>
   <iframe id="frame"></iframe>
 </div>
 <footer><a href="https://github.com/hclee-source/hwpx-math-check">hwpx-math-check</a>
- · 1차 기계 검수 — 최종 판단은 사람이 합니다</footer>
+ 쨌 1李?湲곌퀎 寃????理쒖쥌 ?먮떒? ?щ엺???⑸땲??/footer>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
 const $ = id => document.getElementById(id);
-const BUILD = '20260729e';   // 스크립트 갱신 시 올린다 (캐시 무효화)
+const BUILD = '20260729f';   // ?ㅽ겕由쏀듃 媛깆떊 ???щ┛??(罹먯떆 臾댄슚??
 const PY_FILES = ['hml2sympy.py','eq_answer_check.py','twin_check.py',
                   'math_review.py','hwpx_items.py','report_html.py',
                   'extra_checks.py'];
@@ -162,14 +162,13 @@ function log(msg, replace=false){
 
 async function boot(){
   const py = await loadPyodide();
-  log('수학 엔진 로딩 중… (sympy, lxml)');
+  log('?섑븰 ?붿쭊 濡쒕뵫 以묅?(sympy, lxml)');
   await py.loadPackage(['sympy','lxml']);
   py.FS.mkdirTree('/work/scripts');
-  // 스크립트는 항상 최신을 받는다 — 캐시된 옛 버전과 새 index.html이 섞이면
-  // render() 인자 불일치 같은 TypeError가 난다
+  // ?ㅽ겕由쏀듃????긽 理쒖떊??諛쏅뒗????罹먯떆????踰꾩쟾怨???index.html???욎씠硫?  // render() ?몄옄 遺덉씪移?媛숈? TypeError媛 ?쒕떎
   for (const f of PY_FILES){
     const r = await fetch('scripts/' + f + '?v=' + BUILD, {cache: 'no-store'});
-    if (!r.ok) throw new Error('스크립트 로드 실패: ' + f);
+    if (!r.ok) throw new Error('?ㅽ겕由쏀듃 濡쒕뱶 ?ㅽ뙣: ' + f);
     py.FS.writeFile('/work/scripts/' + f, await r.text());
   }
   await py.runPythonAsync(
@@ -179,11 +178,11 @@ async function boot(){
   const okSig = await py.runPythonAsync(
     "import inspect\n'extras' in inspect.signature(report_html.render).parameters");
   if (!okSig) throw new Error(
-    '스크립트 버전이 맞지 않습니다. Ctrl+F5로 강력 새로고침 해주세요.');
-  log('준비 완료. 파일을 선택하세요.');
+    '?ㅽ겕由쏀듃 踰꾩쟾??留욎? ?딆뒿?덈떎. Ctrl+F5濡?媛뺣젰 ?덈줈怨좎묠 ?댁＜?몄슂.');
+  log('以鍮??꾨즺. ?뚯씪???좏깮?섏꽭??');
   return py;
 }
-pyReady = boot().catch(e => { log('엔진 로딩 실패: ' + e); });
+pyReady = boot().catch(e => { log('?붿쭊 濡쒕뵫 ?ㅽ뙣: ' + e); });
 
 function renderFiles(){
   $('files').innerHTML = picked.map((f, i) =>
@@ -191,7 +190,7 @@ function renderFiles(){
        stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
      <span class="name">${f.name}</span>
      <span class="size">${(f.size/1024).toFixed(0)} KB</span>
-     <button class="rm" data-i="${i}" title="제거">✕</button></li>`).join('');
+     <button class="rm" data-i="${i}" title="?쒓굅">??/button></li>`).join('');
   document.querySelectorAll('#files .rm').forEach(b =>
     b.onclick = () => { picked.splice(+b.dataset.i, 1); renderFiles(); });
   $('go').disabled = picked.length === 0 || running;
@@ -199,7 +198,7 @@ function renderFiles(){
 function setFiles(list){
   picked = [...list].filter(f => /\.(hwpx|json)$/i.test(f.name)).slice(0, 2);
   renderFiles();
-  if (picked.length) log(`파일 ${picked.length}개 선택됨. [검수 시작]을 누르세요.`);
+  if (picked.length) log(`?뚯씪 ${picked.length}媛??좏깮?? [寃???쒖옉]???꾨Ⅴ?몄슂.`);
 }
 $('drop').onclick = () => $('fi').click();
 $('fi').onchange = e => setFiles(e.target.files);
@@ -213,12 +212,12 @@ $('drop').ondrop = e => {
 $('go').onclick = async () => {
   running = true;
   $('go').disabled = true;
-  $('go').innerHTML = '<span class="spin"></span>검수 중…';
+  $('go').innerHTML = '<span class="spin"></span>寃??以묅?;
   $('drop').classList.add('busy');
   $('result').hidden = true;
   try {
     const py = await pyReady;
-    if (!py) throw new Error('엔진이 준비되지 않았습니다. 새로고침 후 다시 시도하세요.');
+    if (!py) throw new Error('?붿쭊??以鍮꾨릺吏 ?딆븯?듬땲?? ?덈줈怨좎묠 ???ㅼ떆 ?쒕룄?섏꽭??');
     const names = [];
     for (let i = 0; i < picked.length; i++){
       const f = picked[i];
@@ -226,7 +225,7 @@ $('go').onclick = async () => {
       py.FS.writeFile(path, new Uint8Array(await f.arrayBuffer()));
       names.push({path, name: f.name});
     }
-    py.globals.set('js_progress', (i, n) => log(`   검산 중… ${i}/${n} 문항`, true));
+    py.globals.set('js_progress', (i, n) => log(`   寃??以묅?${i}/${n} 臾명빆`, true));
     py.globals.set('js_log', m => log(m));
     py.globals.set('inputs', py.toPy(names.map(x => [x.path, x.name])));
 
@@ -236,14 +235,14 @@ jsons, srcs = [], []
 for path, name in inputs:
     if path.endswith('.json'):
         jsons.append(path); srcs.append(name)
-        js_log(f'[입력] {name} (파싱 생략)')
+        js_log(f'[?낅젰] {name} (?뚯떛 ?앸왂)')
     else:
-        js_log(f'[파싱] {name} …')
+        js_log(f'[?뚯떛] {name} ??)
         recs, skipped = hwpx_items.parse(path)
         data = hwpx_items.to_items_json(recs, name)
-        js_log(f'   문항 {data["n"]}개 (표 건너뜀 {skipped}개)')
+        js_log(f'   臾명빆 {data["n"]}媛?(??嫄대꼫? {skipped}媛?')
         if data['n'] == 0:
-            js_log('   ⚠ 문항 없음 — 문항 은행 구조(2열 표)가 맞는지 확인하세요')
+            js_log('   ??臾명빆 ?놁쓬 ??臾명빆 ???援ъ“(2????媛 留욌뒗吏 ?뺤씤?섏꽭??)
         out = path + '.items.json'
         json.dump(data, open(out, 'w'), ensure_ascii=False)
         jsons.append(out); srcs.append(name)
@@ -253,28 +252,28 @@ datas = []
 for jp, name in zip(jsons, srcs):
     d = json.load(open(jp))
     datas.append(d)
-    js_log(f'[검산] {name} — {len(d["items"])}문항')
+    js_log(f'[寃?? {name} ??{len(d["items"])}臾명빆')
     js_progress(0, len(d['items']))
     f, st, dt = eq_answer_check.check(d['items'], progress=js_progress)
     ex = extra_checks.analyze(d)
     f += ex['findings']
     for x in f: x['file'] = name
-    findings += f; stats['검산:' + name] = dict(st); details[name] = dt
+    findings += f; stats['寃??' + name] = dict(st); details[name] = dt
     extras[name] = ex
-    js_log(f'   완료: {dict(st)} · 메모 {len(ex["memos"])} · '
-           f'표기 {sum(t["n"] for t in ex["style"].values())} · 중복후보 {len(ex["dups"])}')
+    js_log(f'   ?꾨즺: {dict(st)} 쨌 硫붾え {len(ex["memos"])} 쨌 '
+           f'?쒓린 {sum(t["n"] for t in ex["style"].values())} 쨌 以묐났?꾨낫 {len(ex["dups"])}')
 
 if len(datas) == 2:
-    js_log('[교차] 쌍둥이문항 검수')
-    n_twin = lambda d: sum(1 for i in d['items'] if i['meta'].get('쌍둥이문항','').strip())
+    js_log('[援먯감] ?띾뫁?대Ц??寃??)
+    n_twin = lambda d: sum(1 for i in d['items'] if i['meta'].get('?띾뫁?대Ц??,'').strip())
     ev, gn = sorted(datas, key=n_twin, reverse=True)
     f, st = twin_check.check(ev['items'], gn['items'])
-    for x in f: x['file'] = '쌍둥이교차'
-    findings += f; stats['쌍둥이'] = dict(st)
+    for x in f: x['file'] = '?띾뫁?닿탳李?
+    findings += f; stats['?띾뫁??] = dict(st)
 
 findings.sort(key=lambda x: ({'high':0,'medium':1,'low':2}.get(x.get('sev'), 9), x['code']))
-js_log(f'검수 완료: 결함 후보 {len(findings)}건')
-items_map = {i['meta'].get('문항id', i.get('loc', '')): i
+js_log(f'寃???꾨즺: 寃고븿 ?꾨낫 {len(findings)}嫄?)
+items_map = {i['meta'].get('臾명빆id', i.get('loc', '')): i
              for d in datas for i in d['items']}
 report_html.render(findings, stats, details, srcs, items=items_map, extras=extras)
 `);
@@ -283,10 +282,10 @@ report_html.render(findings, stats, details, srcs, items=items_map, extras=extra
     $('result').hidden = false;
     $('result').scrollIntoView({behavior: 'smooth'});
   } catch (e) {
-    log('오류: ' + e);
+    log('?ㅻ쪟: ' + e);
   } finally {
     running = false;
-    $('go').textContent = '검수 시작';
+    $('go').textContent = '寃???쒖옉';
     $('drop').classList.remove('busy');
     $('go').disabled = picked.length === 0;
   }
