@@ -96,12 +96,13 @@ class App:
 
             self.say('[검수] 정답↔해설 검산 + 조판 결함' +
                      (' + 쌍둥이 교차' if len(jsons) == 2 else '') + ' …')
-            findings, stats, details = math_review.run(jsons)
+            findings, stats, details, items = math_review.run(jsons)
 
             base = os.path.splitext(files[0])[0]
             html_path = base + '_검수보고서.html'
             open(html_path, 'w', encoding='utf-8').write(report_html.render(
-                findings, stats, details, [os.path.basename(f) for f in files]))
+                findings, stats, details, [os.path.basename(f) for f in files],
+                items=items))
             json.dump({'findings': findings, 'stats': stats, 'details': details},
                       open(base + '_report.json', 'w', encoding='utf-8'),
                       ensure_ascii=False, indent=1)

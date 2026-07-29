@@ -47,7 +47,9 @@ def run(paths):
         stats['쌍둥이'] = dict(st)
 
     findings.sort(key=lambda x: (SEV_ORDER.get(x['sev'], 9), x['code'], x.get('no', 0)))
-    return findings, stats, details
+    items = {i['meta'].get('문항id', i.get('loc', '')): i
+             for d in datas for i in d['items']}
+    return findings, stats, details, items
 
 
 if __name__ == '__main__':
@@ -60,14 +62,14 @@ if __name__ == '__main__':
     if len(a.items_json) > 2:
         ap.error('items.json 은 1개 또는 2개')
 
-    findings, stats, details = run(a.items_json)
+    findings, stats, details, items = run(a.items_json)
     if a.out:
         json.dump({'findings': findings, 'stats': stats, 'details': details},
                   open(a.out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     if a.html:
         import report_html
         open(a.html, 'w', encoding='utf-8').write(
-            report_html.render(findings, stats, details, a.items_json))
+            report_html.render(findings, stats, details, a.items_json, items=items))
 
     n_items = sum(len(json.load(open(p, encoding='utf-8'))['items'])
                   for p in a.items_json)
