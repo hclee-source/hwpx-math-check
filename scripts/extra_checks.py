@@ -31,11 +31,56 @@ STYLE = [
 ]
 
 
+# 원고에서 실제 관측된 오탈자만. 문맥 없이도 확실한 것만 넣는다(오탐 금지).
+TYPOS = [
+    (re.compile(r'수선이 발'), '수선의 발'),
+    (re.compile(r'커야한다'), '커야 한다 (띄어쓰기)'),
+    (re.compile(r'작아야한다'), '작아야 한다 (띄어쓰기)'),
+    (re.compile(r'추죽'), '주축'),
+    (re.compile(r'(?<![가-힣])개다(?=[.\s]|$)'), '개이다'),
+    (re.compile(r'되므로므로|이므로므로'), '중복 어미'),
+    (re.compile(r'(\S)\s{2,}(\S)'), '연속 공백'),
+]
+
+
 def _fields(it):
     yield '본문', it.get('q', '')
     for k, o in enumerate(it.get('opts', [])):
         yield f'보기{k+1}', o
     yield '해설', it.get('expl', '')
+    if it.get('src_cite'):
+        yield '출처', it['src_cite']
+
+
+def _typos(items):
+    """오탈자 사전 검출 + 출처 서명 표기 혼용(소수파만 지적)."""
+    out = []
+    for it in items:
+        for fn, tx in _fields(it):
+            plain = EQ.sub(' ', tx or '')          # 수식 안은 검사 제외
+            for pat, fix in TYPOS:
+                for m in pat.finditer(plain):
+                    if pat.pattern == r'(\S)\s{2,}(\S)':
+                        continue                    # 연속 공백은 조판 관행 — 보류
+                    out.append({'loc': it['loc'], 'page': it.get('page'),
+                                'field': fn, 'hit': m.group().strip(), 'fix': fix})
+    return out
+
+
+def _citations(items):
+    """출처 서명 표기 혼용 — 다수파 대비 소수파를 지적."""
+    VARIANTS = [('쎈', '쏀'), ('개뿔', '게뿔'), ('마플', '마블')]
+    out = []
+    for a, b in VARIANTS:
+        ha = [it['loc'] for it in items if a in (it.get('src_cite') or '')]
+        hb = [it['loc'] for it in items if b in (it.get('src_cite') or '')]
+        if ha and hb:
+            major, minor, mj, mn = ((a, b, ha, hb) if len(ha) >= len(hb)
+                                    else (b, a, hb, ha))
+            out.append({'major': major, 'minor': minor,
+                        'major_n': len(mj), 'minor_n': len(mn),
+                        'locs': mn})
+    return out
 
 
 def _memos(items):
@@ -64,8 +109,29 @@ def _style(items):
                             t['locs'].append(it['loc'])
                         if not t['example']:
                             t['example'] = eq.strip()[:50]
-                # 보기 수식이 순수 숫자인데 꼬리 공백 → 우측 정렬 어긋남
-                if fn.startswith('보기') and re.fullmatch(r'\s*\d+\s+', eq):
+                # 한 수식 안에서 첨자 표기가 뒤섞임 (a ^{2} 와 b^2 혼용 등)
+                for kind, rich, plain in (
+                        ('위첨자', r'\^\s*\{', r'\^\d'),
+                        ('아래첨자', r'_\s*\{', r'[A-Za-z]_\d')):
+                    if re.search(rich, eq) and re.search(plain, eq):
+                        t = types.setdefault(f'한 수식 내 {kind} 형식 혼용',
+                                             {'hint': '같은 수식에 두 표기가 섞임',
+                                              'n': 0, 'locs': [], 'example': ''})
+                        t['n'] += 1
+                        if it['loc'] not in t['locs']:
+                            t['locs'].append(it['loc'])
+                        t['example'] = t['example'] or eq.strip()[:50]
+                # 비교 연산자 좌우 공백 불일치 (a != 0 과 b!=0 혼용)
+                if re.search(r'\S(?:!=|<=|>=)', eq) and re.search(r'\s(?:!=|<=|>=)\s', eq):
+                    t = types.setdefault('비교 연산자 공백 불일치',
+                                         {'hint': '한 수식 안에서 a != 0 과 b!=0 혼용',
+                                          'n': 0, 'locs': [], 'example': ''})
+                    t['n'] += 1
+                    if it['loc'] not in t['locs']:
+                        t['locs'].append(it['loc'])
+                    t['example'] = t['example'] or eq.strip()[:50]
+                # 보기 수식이 순수 숫자인데 꼬리 공백/백틱 → 우측 정렬 어긋남
+                if fn.startswith('보기') and re.fullmatch(r'[\s`~]*\d+[\s`~]+', eq):
                     t = types.setdefault('수식 끝 여분 공백',
                                          {'hint': '선택지 정렬이 어긋남', 'n': 0,
                                           'locs': [], 'example': ''})
@@ -94,7 +160,13 @@ def _style(items):
 
 
 def _dups(items, th=0.85):
-    qs = [re.sub(r'\s+', '', it.get('q', '')) for it in items]
+    """중복 후보. 본문+보기+정답이 모두 같으면 '완전 중복'으로 등급을 올린다."""
+    def norm(s):
+        return re.sub(r'\s+', '', s or '')
+
+    qs = [norm(it.get('q', '')) for it in items]
+    full = [norm(it.get('q', '') + '|'.join(it.get('opts', [])) +
+                 str(it.get('answer'))) for it in items]
     out = []
     for a in range(len(items)):
         if len(qs[a]) < 20:
@@ -104,11 +176,12 @@ def _dups(items, th=0.85):
                 continue
             r = difflib.SequenceMatcher(None, qs[a], qs[b]).ratio()
             if r >= th:
+                exact = full[a] == full[b]
                 out.append({'a': items[a]['loc'], 'ap': items[a].get('page'),
                             'b': items[b]['loc'], 'bp': items[b].get('page'),
-                            'ratio': round(r, 3),
+                            'ratio': round(r, 3), 'exact': exact,
                             'same_ans': items[a]['answer'] == items[b]['answer']})
-    out.sort(key=lambda x: -x['ratio'])
+    out.sort(key=lambda x: (not x['exact'], -x['ratio']))
     return out
 
 
@@ -210,6 +283,22 @@ def _meta(items):
 def analyze(data):
     items = data['items']
     passed, meta_findings = _meta(items)
+    dups = _dups(items)
+    # 완전 중복(본문·보기·정답 동일)은 결함 카드로 올린다
+    for d in dups:
+        if d['exact']:
+            meta_findings.append({
+                'code': 'ITEM_DUP_EXACT', 'sev': 'high', 'no': 0,
+                'loc': d['a'], 'ans': None, 'found_in': [], 'page': d['ap'],
+                'want': d['b'],
+                'tail': f'{d["b"]}와 본문·보기·정답이 완전히 동일 — 변형 없이 복사된 것으로 보임'})
+    if not any(it.get('src_cite') for it in items):
+        cites = []
+    else:
+        cites = _citations(items)
+    n_cite = sum(1 for it in items if (it.get('src_cite') or '').strip())
+    if n_cite == len(items) and items:
+        passed.append(f'출처 표기 전 문항 기재 ({n_cite}건)')
     return {'memos': _memos(items), 'style': _style(items),
-            'dups': _dups(items), 'stats': _stats(items),
-            'passed': passed, 'findings': meta_findings}
+            'dups': dups, 'stats': _stats(items), 'typos': _typos(items),
+            'citations': cites, 'passed': passed, 'findings': meta_findings}

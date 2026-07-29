@@ -87,6 +87,22 @@ def _first_vertpos(p):
     return None
 
 
+def _para_text(p):
+    """문단 자체의 텍스트 (안에 든 표의 텍스트는 제외)."""
+    buf = []
+    for run in p:
+        if ln(run) != 'run':
+            continue
+        if any(ln(c) == 'tbl' for c in run):
+            continue
+        for ch in run:
+            if ln(ch) == 't':
+                buf.append(ch.text or '')
+            elif ln(ch) == 'equation':
+                buf.append(f'${_eq(ch)}$')
+    return ''.join(buf).strip()
+
+
 def _top_tables(p):
     """이 문단 안의 최상위 표만 (중첩 표 제외)."""
     for tbl in p.iter():
@@ -131,6 +147,7 @@ def parse(path):
             root = etree.fromstring(z.read(sec))
             page += 1                      # 구역 시작 = 새 쪽
             prev = None
+            pending = ''                   # 표 바로 앞 문단 = 출처 표기
             for p in root:
                 if ln(p) != 'p':
                     continue
@@ -139,13 +156,18 @@ def parse(path):
                     if prev is not None and v < prev:
                         page += 1
                     prev = v
+                had_tbl = False
                 for tbl in _top_tables(p):
+                    had_tbl = True
                     rec = _parse_table(tbl)
                     if rec is None:
                         skipped += 1
                         continue
                     rec['_page'] = page
+                    rec['_source'] = pending
                     items.append(rec)
+                txt = _para_text(p)
+                pending = txt if txt else ('' if had_tbl else pending)
     return items, skipped
 
 
@@ -163,6 +185,7 @@ def to_items_json(recs, source):
             'no': i, 'q': r.get('본문', '').strip(), 'opts': opts,
             'answer': ans, 'answer_raw': raw, 'expl': expl,
             'loc': r.get('문항id', ''), 'page': r.get('_page'),
+            'src_cite': r.get('_source', ''),
             'meta': {k: r.get(k, '') for k in ('문항id', '지식단위', '난이도', '학습행동영역', '쌍둥이문항')},
         })
     return {'source': source, 'n': len(out), 'items': out}

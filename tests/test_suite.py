@@ -195,7 +195,8 @@ def t_pages():
     import hwpx_items
     # 문단 vertpos: 0 → 5000 (1쪽, 표A) → 0 리셋 (2쪽, 표B) → 400
     sec = ('<sec>'
-           '<p><linesegarray><lineseg vertpos="0"/></linesegarray></p>'
+           '<p><linesegarray><lineseg vertpos="0"/></linesegarray>'
+           '<run><t>쎈 9쪽 12번</t></run></p>'
            '<p><linesegarray><lineseg vertpos="5000"/></linesegarray>'
            f'<run>{_mini_tbl("TG0C1S0Aa1-01")}</run></p>'
            '<p><linesegarray><lineseg vertpos="0"/></linesegarray>'
@@ -210,6 +211,8 @@ def t_pages():
     data = hwpx_items.to_items_json(recs, 't')
     pages = [i['page'] for i in data['items']]
     check('pg.쪽계산', pages == [1, 2], str(pages))
+    check('pg.출처수집', [i.get('src_cite') for i in data['items']] ==
+          ['쎈 9쪽 12번', ''], str([i.get('src_cite') for i in data['items']]))
     html = report_html.render(
         [{'code': 'EQ_UNBALANCED', 'sev': 'high', 'no': 1,
           'loc': 'TG0C1S0Aa1-02', 'ans': 1, 'found_in': [], 'want': 'x{', 'tail': ''}],
@@ -245,6 +248,23 @@ def t_extra():
     check('ex.난이도위반', any(x['code'] == 'META_MISMATCH' and '난이도' in x['tail']
                           for x in ex['findings']), str(ex['findings']))
 
+    # 오탈자·출처 표기·완전 중복
+    t = [item(1, ['$1$'] * 5, 1, '수선이 발을 내리면 $2$개다. 커야한다',
+              loc='YG0C1S0Aa1-01'),
+         item(2, ['$1$'] * 5, 1, '정상 해설이다.', loc='YG0C1S0Aa1-02')]
+    t[0]['src_cite'] = '쏀 21쪽 99번'
+    t[1]['src_cite'] = '쎈 22쪽 10번'
+    # 본문·보기·정답 동일 → 완전 중복 (유사도 판정은 본문 20자 이상일 때만)
+    t[0]['q'] = t[1]['q'] = '타원 $x^{2}+2y^{2}=8$ 의 두 초점 사이의 거리를 구하는 본문이다'
+    ex2 = extra_checks.analyze({'items': t})
+    fixes = {x['fix'] for x in ex2['typos']}
+    check('ex.오탈자3종', {'수선의 발', '개이다'} <= fixes and
+          any('커야' in f for f in fixes), str(fixes))
+    check('ex.출처혼용', ex2['citations'] and ex2['citations'][0]['minor'] == '쏀',
+          str(ex2['citations']))
+    check('ex.완전중복', any(x['code'] == 'ITEM_DUP_EXACT' for x in ex2['findings']),
+          str([x['code'] for x in ex2['findings']]))
+
 
 # ── 6. 실데이터 회귀 (data/ 있을 때만) ────────────────────────
 
@@ -265,11 +285,14 @@ def t_regression():
     check('rg.카이제곱', ex_gn['stats']['chi2'] == 9.85 and ex_gn['stats']['skewed'],
           str(ex_gn['stats']['chi2']))
     check('rg.메타정합통과', len(ex_gn['passed']) == 7, str(ex_gn['passed']))
-    check('rg.결함수', len(findings) == 2 and
-          all(x['code'] == 'EQ_ORPHAN_OP' for x in findings),
-          f'{len(findings)} {[x["code"] for x in findings]}')
-    check('rg.결함위치', sorted(x['loc'] for x in findings) ==
-          ['UG0C1S3Da1-02', 'UG0C1S3Da3-02'])
+    orphan = [x for x in findings if x['code'] == 'EQ_ORPHAN_OP']
+    check('rg.고아연산자2', len(orphan) == 2 and
+          sorted(x['loc'] for x in orphan) == ['UG0C1S3Da1-02', 'UG0C1S3Da3-02'],
+          str([x['loc'] for x in orphan]))
+    # 평가 3쌍(U/S/C 세트 복사) — 일반 파일엔 없음
+    exact = sorted(x['loc'] for x in findings if x['code'] == 'ITEM_DUP_EXACT')
+    check('rg.완전중복3쌍', exact == ['SG0C1S4Db3-01', 'UG0C1S3Ab3-01',
+                                 'UG0C1S3Cb3-01'], str(exact))
     tot = lambda k: sum(len(v.get(k, [])) for v in details.values())
     check('rg.유일증명139', tot('정답유일증명') == 139, tot('정답유일증명'))
     check('rg.일치56', tot('정답일치') == 56, tot('정답일치'))

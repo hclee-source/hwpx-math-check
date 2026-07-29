@@ -21,6 +21,8 @@ CODE_DESC = {
     'TWIN_META_DIFF': '쌍둥이끼리 지식단위/난이도/학습행동영역 불일치',
     'TWIN_ID_PATTERN': '쌍둥이 문항id 몸통 불일치 (오타 의심)',
     'TWIN_UNREF':     '평가 어디서도 참조되지 않는 일반 문항',
+    'ITEM_DUP_EXACT': '다른 문항과 완전히 동일 (변형 없이 복사)',
+    'META_MISMATCH':  '메타데이터 정합 위반',
 }
 FIX_HINT = {
     'EQ_ORPHAN_OP':   '한글에서 쪼개진 두 수식을 지우고 수식 하나로 다시 입력하세요.',
@@ -162,10 +164,13 @@ def _card_body(f, item, items):
         p.append(f'<table class="mini"><tr><th></th><th>{_e(f["loc"])}</th>'
                  f'<th>{_e(f.get("want", ""))}</th></tr>{rows}</table>')
 
-    elif code.startswith('TWIN'):
+    elif code in ('ITEM_DUP_EXACT', 'META_MISMATCH') or code.startswith('TWIN'):
         p.append(f'<div class="row">{_e(f.get("tail", ""))}'
                  + (f' — 대상: <b>{_e(f.get("want"))}</b>' if f.get('want') else '')
                  + '</div>')
+        if code == 'ITEM_DUP_EXACT' and item is not None:
+            p.append(f'<div class="row">본문:<div class="quote">'
+                     f'{pretty_text(item.get("q", "")[:200])}</div></div>')
 
     hint = FIX_HINT.get(code)
     if hint:
@@ -242,12 +247,14 @@ table.mini tr.bad td{background:#F6D3CB;font-weight:700}
 
 def _merge_extras(extras):
     """파일별 extras를 보고서용으로 합친다."""
-    memos, dups, passed = [], [], []
+    memos, dups, passed, typos, cites = [], [], [], [], []
     style = {}
     stats_by = {}
     for src, ex in (extras or {}).items():
         memos += ex.get('memos', [])
         dups += ex.get('dups', [])
+        typos += ex.get('typos', [])
+        cites += ex.get('citations', [])
         for name, t in ex.get('style', {}).items():
             g = style.setdefault(name, {'hint': t['hint'], 'n': 0,
                                         'locs': [], 'example': t['example']})
@@ -258,12 +265,12 @@ def _merge_extras(extras):
             passed.append((src, ex['passed']))
         if ex.get('stats'):
             stats_by[src] = ex['stats']
-    return memos, style, dups, stats_by, passed
+    return memos, style, dups, stats_by, passed, typos, cites
 
 
 def render(findings, stats, details, sources, items=None, extras=None):
     items = items or {}
-    memos, style, dups, stats_by, passed = _merge_extras(extras)
+    memos, style, dups, stats_by, passed, typos, cites = _merge_extras(extras)
     now = time.strftime('%Y-%m-%d %H:%M')
     p = [f'<meta charset="utf-8"><title>문항 검수 보고서</title><style>{CSS}</style>']
     p.append('<h1>수학 문항 검수 보고서</h1>')
@@ -281,6 +288,9 @@ def render(findings, stats, details, sources, items=None, extras=None):
                 (f' (높음 {high})' if high else ''))
     if memos:
         bits.append(f'편집 메모 <b>{len(memos)}건</b>')
+    if typos or cites:
+        n = len(typos) + sum(c['minor_n'] for c in cites)
+        bits.append(f'오탈자·표기 <b>{n}건</b>')
     if style_n:
         bits.append(f'수식 표기 불일치 <b>{style_n}건</b>')
     if dups:
@@ -354,15 +364,38 @@ def render(findings, stats, details, sources, items=None, extras=None):
                  '<p class="muted">본문 텍스트 유사도 85% 이상. 숫자만 바꾼 변형인지, '
                  '실수 중복인지는 사람이 판단한다.</p>')
         p.append('<table class="mini"><tr><th>문항 A</th><th>문항 B</th>'
-                 '<th>유사도</th><th>정답</th></tr>')
+                 '<th>유사도</th><th>판정</th></tr>')
         for d in dups[:20]:
             pa = f' ({d["ap"]}쪽)' if d.get('ap') else ''
             pb = f' ({d["bp"]}쪽)' if d.get('bp') else ''
+            verdict = ('<mark>완전 중복</mark>' if d.get('exact')
+                       else ('유사 · 정답 동일' if d['same_ans'] else '유사 · 정답 다름'))
             p.append(f'<tr><td class="loclist">{_e(d["a"])}{pa}</td>'
                      f'<td class="loclist">{_e(d["b"])}{pb}</td>'
-                     f'<td>{d["ratio"]:.0%}</td>'
-                     f'<td>{"동일" if d["same_ans"] else "다름"}</td></tr>')
+                     f'<td>{d["ratio"]:.0%}</td><td>{verdict}</td></tr>')
         p.append('</table>')
+
+    # 오탈자 · 출처 표기
+    if typos or cites:
+        n = len(typos) + sum(c['minor_n'] for c in cites)
+        p.append(f'<h2>오탈자 · 표기 — {n}건</h2>')
+        if typos:
+            p.append('<table class="mini"><tr><th>문항</th><th>위치</th>'
+                     '<th>현재</th><th>수정</th></tr>')
+            for t in typos[:30]:
+                pg = f' ({t["page"]}쪽)' if t.get('page') else ''
+                p.append(f'<tr><td class="loclist">{_e(t["loc"])}{pg}</td>'
+                         f'<td>{_e(t["field"])}</td>'
+                         f'<td><mark>{_e(t["hit"])}</mark></td>'
+                         f'<td class="fix">{_e(t["fix"])}</td></tr>')
+            p.append('</table>')
+        for c in cites:
+            locs = ', '.join(c['locs'][:12]) + (' …' if len(c['locs']) > 12 else '')
+            p.append(f'<div class="row">출처 서명 혼용: '
+                     f'<b>{_e(c["major"])}</b> {c["major_n"]}건 ↔ '
+                     f'<mark>{_e(c["minor"])}</mark> {c["minor_n"]}건 — '
+                     f'소수파를 <b>{_e(c["major"])}</b>로 통일'
+                     f'<div class="quote loclist">{_e(locs)}</div></div>')
 
     # 편집 메모
     if memos:
