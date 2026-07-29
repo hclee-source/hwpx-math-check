@@ -28,9 +28,15 @@ hwpx (표 기반 문항 은행)
 
 ## 사용법
 
-**가장 쉬운 방법 (Windows):** hwpx 파일 1~2개를 `검수실행.bat` 위에 끌어다 놓으면
-파싱→검수→보고서까지 자동 실행된다. 2개면 첫 번째=평가(쌍둥이 필드 보유측), 두 번째=일반.
-결과는 원본 옆에 `*_report.json`으로 생성. (bat 파일은 한국어 Windows용 CP949 인코딩)
+**Windows에서 쓰는 세 가지 방법** (전부 원본 옆에 `*_검수보고서.html`을 만들어 브라우저로 연다):
+
+1. **검수도우미.pyw 더블클릭** — 창에서 파일 선택 → [검수 시작]. 가장 쉬움
+2. **우클릭 → 보내기 → 문항검수** — 탐색기에서 hwpx를 우클릭으로 바로.
+   등록: `SendTo` 폴더(`shell:sendto`)에 `검수실행.bat` 바로가기를 넣으면 된다
+3. **검수실행.bat에 드래그&드롭** — hwpx 1~2개를 끌어다 놓기 (CP949 인코딩)
+
+파일 2개를 주면 쌍둥이 교차 검수까지 한다. 순서는 무관 — 쌍둥이문항 필드가
+채워진 쪽을 자동으로 평가측으로 인식한다.
 
 명령줄:
 
@@ -41,8 +47,8 @@ python scripts/hwpx_items.py 문항은행.hwpx --out items.json
 # 2) 수식 전수 파싱 측정 (실패 패턴 보고)
 python scripts/hml2sympy.py items.json --dump failures.json
 
-# 3) 수학 검수 통합 실행 (검산 + 쌍둥이 교차. 첫 번째 인자가 쌍둥이 필드 보유측)
-python scripts/math_review.py 평가_items.json 일반_items.json --out report.json
+# 3) 수학 검수 통합 실행 (검산 + 쌍둥이 교차)
+python scripts/math_review.py 평가_items.json 일반_items.json --out report.json --html 보고서.html
 
 # 개별 실행
 python scripts/eq_answer_check.py items.json --out findings.json

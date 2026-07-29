@@ -22,26 +22,32 @@ SEV_ORDER = {'high': 0, 'medium': 1, 'low': 2}
 
 
 def run(paths):
-    findings, stats = [], {}
+    findings, stats, details = [], {}, {}
     datas = []
     for path in paths:
         data = json.load(open(path, encoding='utf-8'))
         datas.append(data)
-        f, st = eq_answer_check.check(data['items'])
+        f, st, dt = eq_answer_check.check(data['items'])
         for x in f:
             x['file'] = data.get('source', path)
         findings += f
         stats[f'검산:{path}'] = dict(st)
+        details[str(path)] = dt
 
     if len(datas) == 2:
-        f, st = twin_check.check(datas[0]['items'], datas[1]['items'])
+        # 쌍둥이문항 필드가 채워진 쪽이 평가측 — 파일 순서는 어떻게 줘도 된다
+        def n_twin(d):
+            return sum(1 for i in d['items']
+                       if i['meta'].get('쌍둥이문항', '').strip())
+        ev, gn = sorted(datas, key=n_twin, reverse=True)
+        f, st = twin_check.check(ev['items'], gn['items'])
         for x in f:
             x['file'] = '쌍둥이교차'
         findings += f
         stats['쌍둥이'] = dict(st)
 
     findings.sort(key=lambda x: (SEV_ORDER.get(x['sev'], 9), x['code'], x.get('no', 0)))
-    return findings, stats
+    return findings, stats, details
 
 
 if __name__ == '__main__':
@@ -49,14 +55,19 @@ if __name__ == '__main__':
     ap.add_argument('items_json', nargs='+',
                     help='items.json 1~2개 (2개면 첫 번째가 쌍둥이 필드 보유측=평가)')
     ap.add_argument('--out')
+    ap.add_argument('--html', help='편집자용 HTML 보고서 저장 경로')
     a = ap.parse_args()
     if len(a.items_json) > 2:
         ap.error('items.json 은 1개 또는 2개')
 
-    findings, stats = run(a.items_json)
+    findings, stats, details = run(a.items_json)
     if a.out:
-        json.dump({'findings': findings, 'stats': stats},
+        json.dump({'findings': findings, 'stats': stats, 'details': details},
                   open(a.out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    if a.html:
+        import report_html
+        open(a.html, 'w', encoding='utf-8').write(
+            report_html.render(findings, stats, details, a.items_json))
 
     n_items = sum(len(json.load(open(p, encoding='utf-8'))['items'])
                   for p in a.items_json)

@@ -179,7 +179,9 @@ def unbalanced(script):
 
 
 def check(items):
+    """→ (findings, 집계 Counter, 판정별 문항id 목록 dict)"""
     out, stats = [], Counter()
+    detail = {'정답유일증명': [], '정답일치': [], '판정불가': [], '결론없음': [], '불일치': []}
     for it in items:
         no, ans, opts = it['no'], it['answer'], it['opts']
         loc = (it.get('meta') or {}).get('문항id', '')
@@ -223,6 +225,7 @@ def check(items):
         # 정답 ↔ 결론 동치 검산
         if not cands:
             stats['결론없음'] += 1
+            detail['결론없음'].append(loc)
             continue
         expr_hits = {k + 1 for k, r in enumerate(o_reprs) if _matches(r, cands)}
 
@@ -244,11 +247,14 @@ def check(items):
 
         if not hits:
             stats['판정불가'] += 1
+            detail['판정불가'].append(loc)
             continue
         if hits == [ans]:
             stats['정답유일증명'] += 1        # 정답만 결론과 일치 — 자동 검증 완료
+            detail['정답유일증명'].append(loc)
         elif ans in hits:
             stats['정답일치'] += 1            # 다른 보기도 걸렸지만 정답 포함
+            detail['정답일치'].append(loc)
         else:
             others = sorted(set(hits))
             is_range = bool(ranges) and not _matches(o_reprs[ans - 1], cands)
@@ -259,7 +265,8 @@ def check(items):
                 'tail': (lines[-1] if lines else '')[:90],
             })
             stats['불일치'] += 1
-    return out, stats
+            detail['불일치'].append(loc)
+    return out, stats, detail
 
 
 if __name__ == '__main__':
@@ -268,7 +275,7 @@ if __name__ == '__main__':
     ap.add_argument('--out')
     a = ap.parse_args()
     data = json.load(open(a.items_json, encoding='utf-8'))
-    findings, stats = check(data['items'])
+    findings, stats, detail = check(data['items'])
     if a.out:
         json.dump(findings, open(a.out, 'w', encoding='utf-8'),
                   ensure_ascii=False, indent=1)
