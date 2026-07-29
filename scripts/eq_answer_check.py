@@ -178,11 +178,13 @@ def unbalanced(script):
     return d != 0
 
 
-def check(items):
-    """→ (findings, 집계 Counter, 판정별 문항id 목록 dict)"""
+def check(items, progress=None):
+    """→ (findings, 집계 Counter, 판정별 문항id 목록 dict). progress(i, n) 콜백 선택."""
     out, stats = [], Counter()
     detail = {'정답유일증명': [], '정답일치': [], '판정불가': [], '결론없음': [], '불일치': []}
-    for it in items:
+    for idx, it in enumerate(items):
+        if progress and idx % 10 == 0:
+            progress(idx, len(items))
         no, ans, opts = it['no'], it['answer'], it['opts']
         loc = (it.get('meta') or {}).get('문항id', '')
         if not ans or ans > len(opts):

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수학 문항 검수 — hwpx</title>
+<style>
+body{font-family:'Malgun Gothic',sans-serif;max-width:860px;margin:28px auto;
+     padding:0 16px;color:#222;line-height:1.55}
+h1{font-size:1.35em;border-bottom:2px solid #333;padding-bottom:6px}
+.muted{color:#7f8c8d;font-size:.9em}
+#drop{border:2px dashed #999;border-radius:12px;padding:44px 16px;text-align:center;
+      color:#555;cursor:pointer;margin:16px 0;transition:.15s;background:#fafafa}
+#drop.hover{border-color:#1e8449;background:#eafaf1;color:#1e8449}
+#files{margin:8px 0;padding-left:20px}
+#files li{font-family:Consolas,monospace;font-size:.9em}
+#go{width:100%;padding:12px;font-size:1.05em;font-weight:bold;border:0;
+    border-radius:8px;background:#1e8449;color:#fff;cursor:pointer}
+#go:disabled{background:#bbb;cursor:default}
+#log{background:#f4f4f4;border-radius:8px;padding:10px 14px;font-family:Consolas,monospace;
+     font-size:.85em;white-space:pre-wrap;min-height:2em;max-height:220px;overflow-y:auto}
+#frame{width:100%;height:75vh;border:1px solid #ccc;border-radius:8px;margin-top:10px}
+#dl{display:inline-block;margin:10px 0;padding:8px 16px;background:#2471a3;color:#fff;
+    border-radius:6px;text-decoration:none}
+</style>
+</head>
+<body>
+<h1>수학 문항 검수 <span class="muted">hwpx 문항 은행</span></h1>
+<p class="muted">정답↔해설 SymPy 검산 · 조판 결함 · 쌍둥이문항 교차 —
+모든 처리는 <b>이 브라우저 안에서만</b> 실행되며 파일이 서버로 전송되지 않습니다.</p>
+
+<div id="drop">hwpx 또는 items.json 파일 1~2개를 여기에 끌어다 놓거나 클릭해서 선택
+<br><span class="muted">2개면 쌍둥이 교차 검수 포함 · 순서 무관</span></div>
+<input type="file" id="fi" multiple accept=".hwpx,.json" hidden>
+<ul id="files"></ul>
+<button id="go" disabled>검수 시작</button>
+<div id="log">엔진 준비 중… (최초 1회, 이후엔 캐시로 빨라집니다)</div>
+<div id="result" hidden>
+  <a id="dl" download="검수보고서.html">보고서 파일로 저장</a>
+  <iframe id="frame"></iframe>
+</div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const PY_FILES = ['hml2sympy.py','eq_answer_check.py','twin_check.py',
+                  'math_review.py','hwpx_items.py','report_html.py'];
+let picked = [], pyReady = null;
+
+function log(msg, replace=false){
+  const el = $('log');
+  if (replace) el.textContent = el.textContent.replace(/\n?[^\n]*$/, '\n' + msg);
+  else el.textContent += (el.textContent ? '\n' : '') + msg;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function boot(){
+  const py = await loadPyodide();
+  log('수학 엔진 로딩 중… (sympy, lxml)');
+  await py.loadPackage(['sympy','lxml']);
+  py.FS.mkdirTree('/work/scripts');
+  for (const f of PY_FILES){
+    const r = await fetch('scripts/' + f);
+    if (!r.ok) throw new Error('스크립트 로드 실패: ' + f);
+    py.FS.writeFile('/work/scripts/' + f, await r.text());
+  }
+  await py.runPythonAsync(
+    "import sys\nsys.path.insert(0, '/work/scripts')\n" +
+    "import json, hwpx_items, eq_answer_check, twin_check, math_review, report_html");
+  log('준비 완료. 파일을 선택하세요.');
+  return py;
+}
+pyReady = boot().catch(e => { log('엔진 로딩 실패: ' + e); });
+
+function setFiles(list){
+  picked = [...list].filter(f => /\.(hwpx|json)$/i.test(f.name)).slice(0, 2);
+  $('files').innerHTML = picked.map(f =>
+    `<li>${f.name} <span class="muted">(${(f.size/1024).toFixed(0)} KB)</span></li>`).join('');
+  $('go').disabled = picked.length === 0;
+  if (picked.length) log(`파일 ${picked.length}개 선택됨. [검수 시작]을 누르세요.`);
+}
+$('drop').onclick = () => $('fi').click();
+$('fi').onchange = e => setFiles(e.target.files);
+$('drop').ondragover = e => { e.preventDefault(); $('drop').classList.add('hover'); };
+$('drop').ondragleave = () => $('drop').classList.remove('hover');
+$('drop').ondrop = e => {
+  e.preventDefault(); $('drop').classList.remove('hover');
+  setFiles(e.dataTransfer.files);
+};
+
+$('go').onclick = async () => {
+  $('go').disabled = true; $('result').hidden = true;
+  try {
+    const py = await pyReady;
+    if (!py) throw new Error('엔진이 준비되지 않았습니다. 새로고침 후 다시 시도하세요.');
+    const names = [];
+    for (let i = 0; i < picked.length; i++){
+      const f = picked[i];
+      const path = '/work/in_' + i + (f.name.toLowerCase().endsWith('.json') ? '.json' : '.hwpx');
+      py.FS.writeFile(path, new Uint8Array(await f.arrayBuffer()));
+      names.push({path, name: f.name});
+    }
+    py.globals.set('js_progress', (i, n) => log(`   검산 중… ${i}/${n} 문항`, true));
+    py.globals.set('js_log', m => log(m));
+    py.globals.set('inputs', py.toPy(names.map(x => [x.path, x.name])));
+
+    const html = await py.runPythonAsync(`
+import json
+jsons, srcs = [], []
+for path, name in inputs:
+    if path.endswith('.json'):
+        jsons.append(path); srcs.append(name)
+        js_log(f'[입력] {name} (파싱 생략)')
+    else:
+        js_log(f'[파싱] {name} …')
+        recs, skipped = hwpx_items.parse(path)
+        data = hwpx_items.to_items_json(recs, name)
+        js_log(f'   문항 {data["n"]}개 (표 건너뜀 {skipped}개)')
+        if data['n'] == 0:
+            js_log('   ⚠ 문항 없음 — 문항 은행 구조(2열 표)가 맞는지 확인하세요')
+        out = path + '.items.json'
+        json.dump(data, open(out, 'w'), ensure_ascii=False)
+        jsons.append(out); srcs.append(name)
+
+findings, stats, details = [], {}, {}
+datas = []
+for jp, name in zip(jsons, srcs):
+    d = json.load(open(jp))
+    datas.append(d)
+    js_log(f'[검산] {name} — {len(d["items"])}문항')
+    js_progress(0, len(d['items']))
+    f, st, dt = eq_answer_check.check(d['items'], progress=js_progress)
+    for x in f: x['file'] = name
+    findings += f; stats['검산:' + name] = dict(st); details[name] = dt
+    js_log(f'   완료: {dict(st)}')
+
+if len(datas) == 2:
+    js_log('[교차] 쌍둥이문항 검수')
+    n_twin = lambda d: sum(1 for i in d['items'] if i['meta'].get('쌍둥이문항','').strip())
+    ev, gn = sorted(datas, key=n_twin, reverse=True)
+    f, st = twin_check.check(ev['items'], gn['items'])
+    for x in f: x['file'] = '쌍둥이교차'
+    findings += f; stats['쌍둥이'] = dict(st)
+
+findings.sort(key=lambda x: ({'high':0,'medium':1,'low':2}.get(x.get('sev'), 9), x['code']))
+js_log(f'검수 완료: 결함 후보 {len(findings)}건')
+report_html.render(findings, stats, details, srcs)
+`);
+    $('frame').srcdoc = html;
+    $('dl').href = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
+    $('result').hidden = false;
+  } catch (e) {
+    log('오류: ' + e);
+  } finally {
+    $('go').disabled = picked.length === 0;
+  }
+};
+</script>
+</body>
+</html>
