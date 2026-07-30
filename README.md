@@ -7,10 +7,12 @@ hwpx 수학 문항 은행(2열 표 구조)을 **로컬 파이썬만으로** 자�
 hwpx (표 기반 문항 은행)
   └─ scripts/hwpx_items.py       표 파싱 → items.json
        ├─ (exam-item-reviewer)    13종 결정론 정합성 검사 (별도 스킬)
-       └─ scripts/math_review.py  수학 전용 통합 러너 (--math 모드 진입점)
-            ├─ eq_answer_check.py   정답 ↔ 해설 SymPy 동치 검산
-            ├─ twin_check.py        평가↔일반 쌍둥이문항 교차 검수
-            └─ hml2sympy.py         한글 수식 스크립트 → SymPy 트랜스파일러
+       ├─ scripts/math_review.py  수학 전용 통합 러너 (--math 모드 진입점)
+       │    ├─ eq_answer_check.py   정답 ↔ 해설 SymPy 동치 검산
+       │    ├─ extra_checks.py      오탈자·출처·표기·중복·통계·메타 부가 검사
+       │    ├─ twin_check.py        평가↔일반 쌍둥이문항 교차 검수
+       │    └─ hml2sympy.py         한글 수식 스크립트 → SymPy 트랜스파일러
+       └─ scripts/hwpx_fix.py     검사 결과를 hwpx에 되돌려 쓰는 교정기
 ```
 
 ## 상태
@@ -25,6 +27,7 @@ hwpx (표 기반 문항 은행)
 | ± 결론 판정 | ✅ `+-`를 부호 심볼로 보존, 양쪽 부호 대입 판정 |
 | 쌍둥이문항 교차 검수 | ✅ 실측 불변식 5종 (메타 3필드·id 몸통·참조 무결성) |
 | 통합 러너 (`--math` 모드) | ✅ `math_review.py` — exam-item-reviewer에 그대로 이식 가능 |
+| **hwpx 자동 교정** | ✅ `hwpx_fix.py` — 확정 가능한 결함만 되돌려 쓰고, 판단 필요분은 보류 |
 
 ## 사용법
 
@@ -62,6 +65,10 @@ python scripts/math_review.py 평가_items.json 일반_items.json --out report.j
 python scripts/eq_answer_check.py items.json --out findings.json
 python scripts/twin_check.py 평가_items.json 일반_items.json
 
+# 4) 검사 결과를 hwpx에 되돌려 쓰기 (자동 교정)
+python scripts/hwpx_fix.py 문항은행.hwpx --dry-run          # 무엇이 바뀌는지만 본다
+python scripts/hwpx_fix.py 문항은행.hwpx --log 교정내역.json  # 원본 옆에 *_교정.hwpx
+
 # 트랜스파일러 자가 테스트
 python scripts/hml2sympy.py --selftest
 ```
@@ -86,6 +93,26 @@ pip install lxml sympy
 
 변환 결과에 `flags`가 붙는다: `pm`(± → 부호 심볼 `PM_`, 검산에서 양쪽 부호 대입),
 `cdots`(값 계산 불가), `text`(텍스트 제거됨), `trailing_op`(`$k<$` 고아 연산자 — 조판 결함 신호).
+
+## 자동 교정 (hwpx_fix.py)
+
+**고칠 대상을 새로 찾지 않는다.** `extra_checks`/`eq_answer_check`가 낸 결함 목록을
+그대로 입력으로 받아 그 문항·그 유형에만 규칙을 적용한다. 검사기와 교정기가 어긋날 수 없고,
+교정본을 재검사하면 해당 항목이 0건으로 수렴한다.
+
+| 자동 교정 | 사람 판단으로 보류 |
+|---|---|
+| 오탈자 (수선이 발→수선의 발, 개다→개이다, 추죽→주축, 커야한다) | 완전 중복 문항 — 어느 쪽을 변형할지 |
+| 출처 표기 혼용 (쏀→쎈) | 편집 메모 `(그림 수정)` — 그림이 실제 반영됐는지 |
+| 쪼개진 수식 병합 (`$k<$$-3$` → `$k<-3$`) | 유사 문항 — 변형이 충분한지 |
+| 표기 정규화 (첨자 쉼표·중괄호 공백·민형식 첨자·`root`→`sqrt` 등) | 정답↔해설 불일치 후보 — 수학적 재검토 |
+
+원본은 절대 덮어쓰지 않는다(`*_교정.hwpx`). 변경 하나하나를 `(문항id, 필드, 유형, 전/후)`로
+`--log`에 남기므로 편집자가 전수 검증할 수 있다. zip 항목 순서·압축 방식과 `mimetype` 선두
+무압축 조건을 유지해 한글이 그대로 읽는다.
+
+> **수식을 병합하면 한글의 레이아웃 캐시(`lineseg`)가 낡는다.**
+> 교정 후 **한글에서 열고 저장**한 뒤 재검사해야 쪽 번호가 정확하다.
 
 ## exam-item-reviewer 통합 (--math 모드)
 

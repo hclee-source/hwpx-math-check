@@ -276,6 +276,128 @@ def t_extra():
           str(ex3['style'].keys()))
 
 
+# ── 5.7 hwpx_fix 왕복 검증 (결함 심은 hwpx → 교정 → 재검사) ───
+
+def _eq_xml(script, w=1656):
+    """수식 개체 하나. script의 <,& 는 XML 이스케이프해야 한다."""
+    esc = script.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    return (f'<equation><sz width="{w}" widthRelTo="ABSOLUTE" height="1125" '
+            f'heightRelTo="ABSOLUTE"/><script>{esc}</script></equation>')
+
+
+def t_fix():
+    """교정기는 검사기가 잡은 것만 고치고, 나머지는 한 글자도 건드리지 않아야 한다."""
+    import json as _j
+    import tempfile
+    import zipfile
+    import extra_checks
+    import eq_answer_check
+    import hwpx_fix
+    import hwpx_items
+
+    def row(k, v):
+        return (f'<tr><tc><p><run><t>{k}</t></run></p></tc>'
+                f'<tc><p><run>{v}</run></p></tc></tr>')
+
+    tbl = ('<tbl>'
+           + row('문항id', '<t>FG0C1S0Aa1-01</t>')
+           + row('본문', '<t>점 $</t>' + _eq_xml('r^2') + '<t>$ 에서 내린 수선이 발</t>')
+           # 쪼개진 수식: 연산자로 끝난 수식 + 인접 수식
+           + row('선택지1', _eq_xml('k<') + _eq_xml('-3', w=1504))
+           + row('선택지2', _eq_xml('{ 1} over { 2}'))
+           + row('선택지3', _eq_xml('k<{-4}'))
+           + row('선택지4', _eq_xml('root5'))
+           + row('선택지5', _eq_xml('21`'))
+           + row('정답', '<t>2</t>')
+           + row('해설1', _eq_xml('(x _{1,} ``y _{1} )')
+                 + '<t> 이므로 답은 </t>' + _eq_xml('{ 1} over { 2}')
+                 + '<t> 개다. 이 값은 커야한다</t>')
+           + row('지식단위', '<t>G0C1S0A</t>')
+           + row('난이도', '<t>1</t>')
+           + row('학습행동영역', '<t>F</t>')
+           + row('쌍둥이문항', '<t></t>')
+           + '</tbl>')
+    # 출처 표기는 표 바로 앞 문단 — 소수파 '쏀' 1건 + 다수파 '쎈' 3건
+    sec = ('<sec>'
+           + ''.join(f'<p><run><t>쎈 {n}쪽 {n}번</t></run></p>'
+                     f'<p><run>{tbl.replace("FG0C1S0Aa1-01", f"FG0C1S0Aa1-1{n}")}'
+                     f'</run></p>' for n in (1, 2, 3))
+           + '<p><run><t>쏀 9쪽 12번</t></run></p>'
+           + f'<p><run>{tbl}</run></p>'
+           + '</sec>')
+
+    tmp = tempfile.NamedTemporaryFile(suffix='.hwpx', delete=False)
+    with zipfile.ZipFile(tmp, 'w') as z:
+        z.writestr('mimetype', 'application/hwp+zip')
+        z.writestr('Contents/section0.xml',
+                   '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>' + sec)
+    tmp.close()
+
+    # 교정 전: 심은 결함이 실제로 검출되는가 (검출 안 되면 이 테스트는 무의미)
+    d0 = hwpx_items.to_items_json(hwpx_items.parse(tmp.name)[0], 't')
+    ex0 = extra_checks.analyze(d0)
+    f0, _, _ = eq_answer_check.check(d0['items'])
+    check('fx.사전.오탈자', len(ex0['typos']) >= 2, str(ex0['typos']))
+    check('fx.사전.출처혼용', ex0['citations'] and ex0['citations'][0]['minor'] == '쏀')
+    check('fx.사전.고아연산자', any(x['code'] == 'EQ_ORPHAN_OP' for x in f0),
+          str([x['code'] for x in f0]))
+    for name in ('중괄호 안 여분 공백', '첨자 안 쉼표', 'root 표기',
+                 '수식 끝 여분 공백', '비교식 불필요 중괄호', '위첨자 민형식 a^2'):
+        check(f'fx.사전.{name}', name in ex0['style'], str(list(ex0['style'])))
+
+    out_raws, changes, manual, _, _ = hwpx_fix.fix(tmp.name)
+    dst = tmp.name.replace('.hwpx', '_교정.hwpx')
+    hwpx_fix.write_hwpx(tmp.name, dst, out_raws)
+
+    # 교정 후: 결함이 사라졌는가
+    d1 = hwpx_items.to_items_json(hwpx_items.parse(dst)[0], 't')
+    ex1 = extra_checks.analyze(d1)
+    f1, _, _ = eq_answer_check.check(d1['items'])
+    check('fx.후.오탈자0', ex1['typos'] == [], str(ex1['typos']))
+    check('fx.후.출처혼용0', ex1['citations'] == [], str(ex1['citations']))
+    check('fx.후.표기0', ex1['style'] == {}, str(list(ex1['style'])))
+    check('fx.후.고아연산자0', not any(x['code'] == 'EQ_ORPHAN_OP' for x in f1),
+          str([x['code'] for x in f1]))
+
+    # 구조·내용 보존
+    check('fx.문항수유지', len(d0['items']) == len(d1['items']) == 4,
+          f"{len(d0['items'])}→{len(d1['items'])}")
+    check('fx.정답유지', [i['answer'] for i in d1['items']] == [2] * 4,
+          str([i['answer'] for i in d1['items']]))
+    check('fx.메타유지', [i['meta'] for i in d0['items']] ==
+          [i['meta'] for i in d1['items']])
+    it = d1['items'][-1]
+    check('fx.수식병합', '$k<-3$' in it['opts'][0], repr(it['opts'][0]))
+    check('fx.한글텍스트교정', '수선의 발' in it['q'] and '개이다' in it['expl']
+          and '커야 한다' in it['expl'], repr(it['q']) + repr(it['expl'][:80]))
+    check('fx.보기값보존', it['opts'][4] == '$21$', repr(it['opts'][4]))
+    check('fx.변경로그있음', len(changes) > 10 and
+          all({'loc', 'field', 'kind', 'before', 'after'} <= set(c) for c in changes),
+          str(len(changes)))
+
+    # 병합된 수식은 두 조각의 폭 합을 물려받아야 한다 (조판 폭 보존)
+    from lxml import etree
+    with zipfile.ZipFile(dst) as zf:
+        root = etree.fromstring(zf.read('Contents/section0.xml'))
+        szs = [e for e in root.iter() if etree.QName(e).localname == 'sz'
+               and e.get('width') == '3160']
+        check('fx.병합폭합산', len(szs) == 4, f'{len(szs)}건 (문항 4개 × 1)')
+
+        # zip 구조: mimetype 첫 항목·무압축이어야 한글이 읽는다
+        first = zf.infolist()[0]
+        check('fx.mimetype선두', first.filename == 'mimetype' and
+              first.compress_type == 0, first.filename)
+        check('fx.crc정상', zf.testzip() is None)
+
+    # 사람 판단 대상은 손대지 않는다
+    check('fx.보류분류', all(m['code'] in hwpx_fix.MANUAL or
+                          m['code'] in ('EDIT_MEMO', 'ITEM_DUP_NEAR')
+                          for m in manual), str([m['code'] for m in manual]))
+
+    os.unlink(tmp.name)
+    os.unlink(dst)
+
+
 # ── 6. 실데이터 회귀 (data/ 있을 때만) ────────────────────────
 
 def t_regression():
@@ -316,7 +438,8 @@ def t_regression():
 if __name__ == '__main__':
     for t in (t_transpile, t_eq_ok_value, t_eq_wrong_answer, t_eq_range,
               t_eq_dup, t_eq_equation_options, t_eq_orphan_unbalanced,
-              t_eq_pm, t_twin, t_report, t_pages, t_extra, t_regression):
+              t_eq_pm, t_twin, t_report, t_pages, t_extra, t_fix,
+              t_regression):
         print(t.__name__)
         try:
             t()
