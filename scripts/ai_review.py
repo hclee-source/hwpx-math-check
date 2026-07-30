@@ -253,10 +253,15 @@ def run_batch(items, poll=30, progress=None):
     return results, usage
 
 
-def review(items, sync=False, progress=None):
-    """items → (findings, results, usage). 실패 문항은 결함이 아니라 '검수 못함'."""
-    runner = run_sync if sync else run_batch
-    results, usage = runner(items, progress=progress)
+def review(items, sync=False, progress=None, poll=30):
+    """items → (findings, results, usage). 실패 문항은 결함이 아니라 '검수 못함'.
+
+    poll: 배치 상태 조회 간격(초). sync=True 면 무시된다.
+    """
+    if sync:
+        results, usage = run_sync(items, progress=progress)
+    else:
+        results, usage = run_batch(items, poll=poll, progress=progress)
     by_loc = {i['loc']: i for i in items}
     findings, failed = [], []
     for loc, v in results.items():

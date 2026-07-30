@@ -78,6 +78,11 @@ python scripts/math_review.py items.json --ai --html 보고서.html   # 통합 �
 
 # 트랜스파일러 자가 테스트
 python scripts/hml2sympy.py --selftest
+
+# 검증 (3층)
+python tests/test_suite.py       # 코드 기반 검증 98건 (합성 결함·오탐 방지·실데이터 회귀)
+python tests/test_api_e2e.py     # ai_review를 실제 SDK로 — 목 HTTP 서버 32건
+python tests/test_mutations.py   # 검증의 검증 — 일부러 망가뜨려 잡히는지 확인
 ```
 
 요구사항: Python 3.9+, `pip install lxml sympy` (AI 검수만 `pip install anthropic`)
