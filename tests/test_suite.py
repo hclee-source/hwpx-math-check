@@ -14,6 +14,8 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'scripts'))
 
+import base64
+
 import sympy
 import hml2sympy
 import eq_answer_check as eqc
@@ -398,6 +400,136 @@ def t_fix():
     os.unlink(dst)
 
 
+# ── 5.75 hwpx_images — BMP→PNG 변환 (Claude vision은 BMP를 안 받는다) ──
+
+def t_images():
+    """변환기의 세 함정: 행 4바이트 패딩, bottom-up 저장, BGR 픽셀 순서."""
+    import struct
+    import zlib
+    import hwpx_images as hi
+
+    def make_bmp(w, h, rgb_rows, bottom_up=True, bpp=24, comp=0):
+        """rgb_rows: 위→아래 순서의 [(r,g,b), ...] 행 리스트."""
+        stride = (w * 3 + 3) & ~3
+        rows = list(rgb_rows)
+        if bottom_up:
+            rows = rows[::-1]
+        px = b''
+        for row in rows:
+            line = b''.join(bytes((b, g, r)) for r, g, b in row)  # BGR
+            px += line + b'\x00' * (stride - len(line))           # 패딩
+        info = struct.pack('<IiiHHIIiiII', 40, w, h if bottom_up else -h,
+                           1, bpp, comp, len(px), 0, 0, 0, 0)
+        return (b'BM' + struct.pack('<IHHI', 14 + 40 + len(px), 0, 0, 54)
+                + info + px)
+
+    def png_pixels(data):
+        """PNG(필터0, 8bit truecolor) → 위→아래 [(r,g,b), ...] 행 리스트."""
+        assert data[:8] == b'\x89PNG\r\n\x1a\n'
+        pos, w, h, idat = 8, None, None, b''
+        while pos < len(data):
+            n = struct.unpack('>I', data[pos:pos + 4])[0]
+            tag = data[pos + 4:pos + 8]
+            body = data[pos + 8:pos + 8 + n]
+            if tag == b'IHDR':
+                w, h, depth, ctype = struct.unpack('>IIBB', body[:10])
+                assert (depth, ctype) == (8, 2), (depth, ctype)
+            elif tag == b'IDAT':
+                idat += body
+            pos += 12 + n
+        raw = zlib.decompress(idat)
+        out, stride = [], w * 3
+        for y in range(h):
+            s = y * (stride + 1)
+            assert raw[s] == 0, '필터 0이 아니다'
+            line = raw[s + 1:s + 1 + stride]
+            out.append([tuple(line[i:i + 3]) for i in range(0, stride, 3)])
+        return out
+
+    # 3x2, 색이 전부 다르고 폭이 4의 배수가 아니라 패딩이 생긴다
+    src = [[(255, 0, 0), (0, 255, 0), (0, 0, 255)],
+           [(1, 2, 3), (250, 251, 252), (10, 20, 30)]]
+    got = png_pixels(hi.bmp_to_png(make_bmp(3, 2, src)))
+    check('img.bottomup복원', got == src, f'{got} != {src}')
+    # top-down BMP(높이 음수)도 같은 결과가 나와야 한다
+    got2 = png_pixels(hi.bmp_to_png(make_bmp(3, 2, src, bottom_up=False)))
+    check('img.topdown복원', got2 == src, str(got2))
+    # 1px 폭 — 패딩이 3바이트 붙는 최악의 경우
+    one = [[(7, 8, 9)], [(200, 100, 50)]]
+    check('img.1px폭', png_pixels(hi.bmp_to_png(make_bmp(1, 2, one))) == one)
+
+    # 미지원 변종은 조용히 죽지 말고 ValueError로 알려야 한다
+    for label, kw in (('8bpp', {'bpp': 8}), ('압축', {'comp': 1})):
+        try:
+            hi.bmp_to_png(make_bmp(3, 2, src, **kw))
+            check(f'img.거부.{label}', False, '예외가 안 났다')
+        except ValueError:
+            check(f'img.거부.{label}', True)
+    try:
+        hi.bmp_to_png(b'GIF89a' + b'\x00' * 100)
+        check('img.거부.BMP아님', False, '예외가 안 났다')
+    except ValueError:
+        check('img.거부.BMP아님', True)
+    try:
+        hi.bmp_to_png(make_bmp(3, 2, src)[:40])       # 데이터 잘림
+        check('img.거부.잘림', False, '예외가 안 났다')
+    except ValueError:
+        check('img.거부.잘림', True)
+
+    # load(): 매니페스트 → 변환. 깨진 그림 하나가 전체를 죽이지 않아야 한다
+    import tempfile
+    import zipfile
+    hpf = ('<opf:package><opf:manifest>'
+           '<opf:item id="image1" href="BinData/image1.bmp" media-type="image/bmp"/>'
+           '<opf:item id="image2" href="BinData/image2.bmp" media-type="image/bmp"/>'
+           '<opf:item id="image3" href="BinData/image3.png" media-type="image/png"/>'
+           '<opf:item id="image4" href="BinData/missing.bmp" media-type="image/bmp"/>'
+           '<opf:item id="style" href="styles.css" media-type="text/css"/>'
+           '</opf:manifest></opf:package>')
+    tmp = tempfile.NamedTemporaryFile(suffix='.hwpx', delete=False)
+    with zipfile.ZipFile(tmp, 'w') as z:
+        z.writestr('Contents/content.hpf', hpf)
+        z.writestr('BinData/image1.bmp', make_bmp(3, 2, src))
+        z.writestr('BinData/image2.bmp', b'not a bmp at all')      # 깨진 그림
+        z.writestr('BinData/image3.png', b'\x89PNG\r\n\x1a\nzzz')  # 그대로 통과
+        z.writestr('styles.css', 'body{}')
+    tmp.close()
+    got = hi.load(tmp.name)
+    check('img.load.변환2건', sorted(got) == ['image1', 'image3'], str(sorted(got)))
+    check('img.load.BMP는PNG로', got['image1'][0] == 'image/png'
+          and got['image1'][1][:8] == b'\x89PNG\r\n\x1a\n')
+    check('img.load.PNG는그대로', got['image3'] == ('image/png',
+                                                b'\x89PNG\r\n\x1a\nzzz'))
+    check('img.load.CSS무시', 'style' not in got)
+    os.unlink(tmp.name)
+
+    # 파서가 `[그림 N]` 표시와 그림 id를 문항 단위로 이어 붙이는가
+    import hwpx_items
+    pic = ('<run><equation><script>x</script></equation></run>'
+           '<run><pic><img binaryItemIDRef="imgA"/></pic></run>')
+    def row(k, v):
+        return (f'<tr><tc><p><run><t>{k}</t></run></p></tc>'
+                f'<tc><p>{v}</p></tc></tr>')
+    sec = ('<sec><p><run><tbl>'
+           + row('문항id', '<run><t>IG0C1S0Aa1-01</t></run>')
+           + row('본문', f'<run><t>본문</t></run>{pic}')
+           + row('정답', '<run><t>1</t></run>')
+           + row('선택지1', '<run><t>1</t></run>')
+           + row('해설1', '<run><t>해설</t></run><run><pic>'
+                          '<img binaryItemIDRef="imgB"/></pic></run>')
+           + '</tbl></run></p></sec>')
+    tmp2 = tempfile.NamedTemporaryFile(suffix='.hwpx', delete=False)
+    with zipfile.ZipFile(tmp2, 'w') as z:
+        z.writestr('Contents/section0.xml', sec)
+    tmp2.close()
+    d = hwpx_items.to_items_json(hwpx_items.parse(tmp2.name)[0], 't')
+    i0 = d['items'][0]
+    check('img.파서.id순서', i0['images'] == ['imgA', 'imgB'], str(i0['images']))
+    check('img.파서.본문표시', '[그림 1]' in i0['q'], repr(i0['q']))
+    check('img.파서.해설표시', '[그림 2]' in i0['expl'], repr(i0['expl']))
+    os.unlink(tmp2.name)
+
+
 # ── 5.8 ai_review (API 호출 없이 — 오탐 방어 로직과 스키마만) ──
 
 def t_ai():
@@ -427,9 +559,35 @@ def t_ai():
     check('ai.구조화출력',
           p['output_config']['format']['schema'] is ai.VERDICT_SCHEMA)
     check('ai.effort', p['output_config']['effort'] == 'high')
-    body = p['messages'][0]['content']
+    blocks = p['messages'][0]['content']
+    body = '\n'.join(b['text'] for b in blocks if b['type'] == 'text')
     check('ai.문항텍스트', 'AG0C1S0Aa1-01' in body and '[인쇄된 정답] 2번' in body)
     check('ai.XML안보냄', '<' not in body.replace('<=', ''), body[:80])
+    check('ai.그림없으면블록1개', len(blocks) == 1 and blocks[0]['type'] == 'text',
+          str([b['type'] for b in blocks]))
+
+    # ── 멀티모달: 그림 첨부 ────────────────────────────────────────
+    it2 = item(8, ['$1$'] * 5, 1, '해설 [그림 2] 참고', loc='AG0C1S0Aa1-08')
+    it2['q'] = '본문 [그림 1] 에서'
+    it2['images'] = ['image7', 'image9']
+    imgs = {'image7': ('image/png', b'\x89PNG\r\n\x1a\nfake7'),
+            'image9': ('image/png', b'\x89PNG\r\n\x1a\nfake9')}
+    bl = ai.build_params(it2, imgs)['messages'][0]['content']
+    kinds = [b['type'] for b in bl]
+    check('ai.img.블록순서', kinds == ['text', 'text', 'image', 'text', 'image'],
+          str(kinds))
+    check('ai.img.라벨', [b['text'] for b in bl if b['type'] == 'text'][1:]
+          == ['[그림 1]', '[그림 2]'],
+          str([b['text'] for b in bl if b['type'] == 'text'][1:]))
+    src = bl[2]['source']
+    check('ai.img.base64', src['type'] == 'base64'
+          and src['media_type'] == 'image/png'
+          and base64.b64decode(src['data']) == imgs['image7'][1], str(src)[:90])
+    # 변환 실패한 그림은 '없는 것'이라고 알려야 한다 — 상상해서 판정하면 오탐
+    bl2 = ai.build_params(it2, {'image7': imgs['image7']})['messages'][0]['content']
+    check('ai.img.누락고지', sum(b['type'] == 'image' for b in bl2) == 1
+          and '첨부하지 못했다' in bl2[-1]['text'], str([b['type'] for b in bl2]))
+    check('ai.img.그림코드', 'AI_FIGURE_MISMATCH' in ai.SEV_BY_CONF)
 
     # ★ 확신도 → 등급 환산: '낮음'은 결함으로 올리지 않는다 (오탐 방어의 핵심)
     def verdict(conf, code='AI_ANSWER_WRONG'):
@@ -458,7 +616,8 @@ def t_ai():
         'AG0C1S0Aa1-03': {'error': 'refusal'},
     }
     orig = ai.run_sync
-    ai.run_sync = lambda items, progress=None: (fake, {'in': 1000, 'out': 2000})
+    ai.run_sync = (lambda items, progress=None, images=None:
+                   (fake, {'in': 1000, 'out': 2000}))
     try:
         f, res, usage = ai.review(its, sync=True)
     finally:
@@ -521,7 +680,7 @@ def t_regression():
 if __name__ == '__main__':
     for t in (t_transpile, t_eq_ok_value, t_eq_wrong_answer, t_eq_range,
               t_eq_dup, t_eq_equation_options, t_eq_orphan_unbalanced,
-              t_eq_pm, t_twin, t_report, t_pages, t_extra, t_fix, t_ai,
+              t_eq_pm, t_twin, t_report, t_pages, t_extra, t_fix, t_images, t_ai,
               t_regression):
         print(t.__name__)
         try:

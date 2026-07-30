@@ -27,6 +27,7 @@ CODE_DESC = {
     'AI_ANSWER_WRONG': 'AI가 직접 푼 결과가 인쇄된 정답과 다름 — 확인 필요',
     'AI_EXPL_ERROR':   'AI 판정: 해설 중간 단계에 오류·비약',
     'AI_ITEM_AMBIGUOUS': 'AI 판정: 조건이 불충분하거나 중의적',
+    'AI_FIGURE_MISMATCH': 'AI 판정: 그림이 본문·해설 서술과 어긋남 (그림 첨부 검수)',
     'AI_WORDING':      'AI 판정: 용어·문장이 오해를 부름',
 }
 FIX_HINT = {

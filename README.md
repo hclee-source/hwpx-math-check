@@ -13,6 +13,7 @@ hwpx (표 기반 문항 은행)
        │    ├─ twin_check.py        평가↔일반 쌍둥이문항 교차 검수
        │    ├─ hml2sympy.py         한글 수식 스크립트 → SymPy 트랜스파일러
        │    └─ ai_review.py       [선택] Claude API 심층 검수 (--ai, 토큰 비용)
+       │         └─ hwpx_images.py   그림 추출 + BMP→PNG (멀티모달 검수용)
        └─ scripts/hwpx_fix.py     검사 결과를 hwpx에 되돌려 쓰는 교정기
 ```
 
@@ -72,9 +73,12 @@ python scripts/hwpx_fix.py 문항은행.hwpx --dry-run          # 무엇이 바�
 python scripts/hwpx_fix.py 문항은행.hwpx --log 교정내역.json  # 원본 옆에 *_교정.hwpx
 
 # 5) [선택] AI 심층 검수 — 규칙이 못 잡는 것만. 토큰 비용이 든다
-python scripts/ai_review.py items.json --estimate           # 비용만 먼저 계산
-python scripts/ai_review.py items.json --limit 5 --sync     # 5문항 시범
+python scripts/ai_review.py items.json --estimate                  # 비용만 먼저 계산
+python scripts/ai_review.py items.json --hwpx 원본.hwpx --limit 5 --sync   # 5문항 시범
 python scripts/math_review.py items.json --ai --html 보고서.html   # 통합 실행
+
+# 그림만 따로 꺼내 보기 (BMP→PNG)
+python scripts/hwpx_images.py 원본.hwpx --dump ./figs
 
 # 트랜스파일러 자가 테스트
 python scripts/hml2sympy.py --selftest
@@ -137,7 +141,27 @@ pip install lxml sympy
 | `AI_ANSWER_WRONG` 직접 푼 결과 ≠ 인쇄된 정답 | 수식 조판·괄호 짝·쪼개진 수식 |
 | `AI_EXPL_ERROR` 해설 중간 단계 오류·비약 | 표기 스타일·출처·오탈자 |
 | `AI_ITEM_AMBIGUOUS` 조건 불충분·중의적 | 문항 중복·정답 분포 편향 |
-| `AI_WORDING` 용어 오류·오해를 부르는 문장 | 정답↔해설 결론 동치 |
+| `AI_FIGURE_MISMATCH` 그림이 서술과 어긋남 | 정답↔해설 결론 동치 |
+| `AI_WORDING` 용어 오류·오해를 부르는 문장 | |
+
+### 그림 첨부 (멀티모달) — `--hwpx`
+
+기하 문항은 그림이 조건의 일부다. 텍스트만 보내면 AI가 `판단불가`로 되돌릴
+수밖에 없다. `--hwpx 원본.hwpx`를 주면 그림을 꺼내 함께 보낸다.
+
+`hwpx_images.py`가 `Contents/content.hpf` 매니페스트로 `binaryItemIDRef`→실제
+바이너리를 찾고, **BMP를 PNG로 변환한다**(Claude vision은 BMP를 받지 않는다).
+변환기는 24bpp 무압축 BMP 전용이고 `zlib`·`struct`만 쓴다 — 한글이 넣는 그림이
+전부 그 형식이라 Pillow를 의존성에 넣지 않았다. 그 밖의 변종은 건너뛰고,
+**첨부 못 한 그림은 "첨부하지 못했다"고 모델에 알린다** — 없는 그림을 상상해서
+판정하면 그게 오탐이다.
+
+파서가 본문·해설의 그림 자리에 `[그림 N]` 표시를 남기고 같은 순서로
+`item['images']`에 id를 담으므로, 라벨과 이미지가 짝을 이뤄 전송된다.
+
+실측(기하 Ⅰ-3 4단원): 그림 있는 문항 **49개(23%)**, 그림 52장 전부 변환 성공,
+그림이 더하는 입력 토큰 약 5,400개 = Batch 단가로 **$0.013**. 도형이 작아서
+장당 100토큰 수준이라 사실상 공짜다.
 
 **오탐 방어가 설계의 중심이다.**
 

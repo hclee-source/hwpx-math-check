@@ -16,6 +16,7 @@ ai_review의 핵심 불변식을 하나씩 깨뜨리고, test_api_e2e가 그 돌
 import contextlib
 import io
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,8 +41,8 @@ def _register(ai):
     def _():
         orig = ai.build_params
 
-        def patched(it):
-            p = orig(it)
+        def patched(it, images=None):
+            p = orig(it, images)
             p['system'] = [{'type': 'text', 'text': ai.SYSTEM}]
             return p
         ai.build_params = patched
@@ -79,8 +80,8 @@ def _register(ai):
     def _():
         orig = ai.build_params
 
-        def patched(it):
-            p = orig(it)
+        def patched(it, images=None):
+            p = orig(it, images)
             p['output_config'] = {'effort': 'high'}
             return p
         ai.build_params = patched
@@ -90,19 +91,49 @@ def _register(ai):
     def _():
         orig = ai.run_batch
 
-        def patched(items, poll=30, progress=None):
-            res, usage = orig(items, poll=poll, progress=progress)
+        def patched(items, poll=30, progress=None, images=None):
+            res, usage = orig(items, poll=poll, progress=progress, images=images)
             vals = list(res.values())
             return {it['loc']: vals[i] for i, it in enumerate(items)}, usage
         ai.run_batch = patched
         return lambda: setattr(ai, 'run_batch', orig)
 
+    @mutation('그림을 첨부하지 않음', 'e2e.img.블록구성')
+    def _():
+        orig = ai._content
+        ai._content = lambda it, images=None: [
+            {'type': 'text', 'text': ai._item_text(it)}]
+        return lambda: setattr(ai, '_content', orig)
+
+    @mutation('변환 실패한 그림을 조용히 넘김', 'e2e.img.누락고지')
+    def _():
+        """없는 그림을 안 알리면 모델이 상상해서 판정한다 = 오탐."""
+        orig = ai._content
+
+        def patched(it, images=None):
+            blocks = orig(it, images)
+            return [b for b in blocks
+                    if '첨부하지 못했다' not in b.get('text', '')]
+        ai._content = patched
+        return lambda: setattr(ai, '_content', orig)
+
+    @mutation('그림 라벨 없이 이미지만 보냄', 'e2e.img.라벨동행')
+    def _():
+        """라벨이 없으면 어느 그림이 [그림 N]인지 모델이 알 수 없다."""
+        orig = ai._content
+
+        def patched(it, images=None):
+            return [b for b in orig(it, images)
+                    if not re.fullmatch(r'\[그림 \d+\]', b.get('text', ''))]
+        ai._content = patched
+        return lambda: setattr(ai, '_content', orig)
+
     @mutation('refusal을 정상 판정으로 처리', 'e2e.sync.refusal분리')
     def _():
         orig = ai.run_sync
 
-        def patched(items, progress=None):
-            res, usage = orig(items, progress=progress)
+        def patched(items, progress=None, images=None):
+            res, usage = orig(items, progress=progress, images=images)
             for k, v in res.items():
                 if v.get('error') == 'refusal':
                     res[k] = {'solved': '', 'answer_verdict': '일치',

@@ -7,21 +7,24 @@
 일치하므로 검사를 통과한다. 그 사각지대가 이 모듈의 담당 범위다.
 
 설계 원칙 (docs/설계노트.md · README '검수 원칙'을 그대로 따른다):
-  1) section0.xml을 컨텍스트에 올리지 않는다. 문항별 텍스트(본문·보기·정답·해설)만 보낸다.
+  1) section0.xml을 컨텍스트에 올리지 않는다. 문항별 텍스트(본문·보기·정답·해설)와
+     그 문항의 그림만 보낸다 — 한 요청에 다른 문항이 섞이지 않는다.
   2) 해설을 따라 읽고 수긍하지 말고 **먼저 스스로 푼다.** 그다음 인쇄된 정답과 대조한다.
   3) 오탐이 세 번 나면 아무도 안 쓴다 — 확신도가 낮으면 결함으로 올리지 않는다.
      등급(sev)은 모델이 정하지 않고 이 코드가 확신도에서 환산한다.
   4) 표기·조판 결함은 extra_checks/eq_answer_check가 이미 본다. 중복 보고를 금지한다.
+  5) 그림이 없으면 판정하지 않는다. 기하는 그림이 조건의 일부라, --hwpx 로 그림을
+     받으면 첨부하고, 못 받았으면 그렇다고 모델에 알려 추측을 막는다.
 
 비용 설계: 문항 1개 = 요청 1개. 기본이 Batch API(50% 절감)이고, 검수 기준
 프롬프트는 문항 211개에 걸쳐 프롬프트 캐싱으로 재사용된다. 판정 스키마는
 structured outputs로 고정해 파싱 실패가 없다.
 
   python ai_review.py items.json --estimate            # 토큰·비용만 계산 (API 호출 0)
-  python ai_review.py items.json --limit 5 --sync      # 5문항만 즉시 검수
-  python ai_review.py items.json --out ai_findings.json  # 전체(Batch)
+  python ai_review.py items.json --hwpx 원본.hwpx --limit 5 --sync   # 5문항 시범
+  python ai_review.py items.json --hwpx 원본.hwpx --out ai_findings.json  # 전체(Batch)
 """
-import argparse, json, os, sys, time
+import argparse, base64, json, os, sys, time
 
 MODEL = 'claude-opus-5'
 MAX_TOKENS = 24000
@@ -33,6 +36,8 @@ SEV_BY_CONF = {
     'AI_ANSWER_WRONG':    {'높음': 'high', '보통': 'medium', '낮음': None},
     'AI_EXPL_ERROR':      {'높음': 'medium', '보통': 'low', '낮음': None},
     'AI_ITEM_AMBIGUOUS':  {'높음': 'medium', '보통': 'low', '낮음': None},
+    # 그림 첨부가 있어야 판정 가능한 유형 (멀티모달)
+    'AI_FIGURE_MISMATCH': {'높음': 'high', '보통': 'medium', '낮음': None},
     'AI_WORDING':         {'높음': 'low', '보통': 'low', '낮음': None},
 }
 
@@ -53,7 +58,8 @@ SYSTEM = """당신은 고등학교 기하 문항 은행의 수학 검수자다. 
 1. AI_ANSWER_WRONG — 직접 푼 결과가 인쇄된 정답과 다르다.
 2. AI_EXPL_ERROR — 해설 중간 단계가 틀렸거나 비약이다(결론은 맞을 수 있다).
 3. AI_ITEM_AMBIGUOUS — 조건이 불충분해 답이 여러 개거나, 중의적이다.
-4. AI_WORDING — 수학 용어가 틀렸거나 문장이 오해를 부른다. 문체 취향은 제외.
+4. AI_FIGURE_MISMATCH — 첨부된 그림이 본문·해설의 서술과 어긋난다.
+5. AI_WORDING — 수학 용어가 틀렸거나 문장이 오해를 부른다. 문체 취향은 제외.
 
 # 확신도를 정직하게 매겨라
 - 높음: 계산을 두 번 다른 방법으로 검증했고 결론이 확실하다.
@@ -64,8 +70,13 @@ SYSTEM = """당신은 고등학교 기하 문항 은행의 수학 검수자다. 
 침묵이 낫다.
 
 # 그림 관련
-본문에 그림이 있으면 텍스트에 전달되지 않는다. 그림이 있어야 풀리는 문항은
-`판단불가` / `낮음`으로 두고 findings를 비워라. 추측해서 틀리지 마라.
+본문·해설의 `[그림 N]` 표시는 그 자리에 그림이 있다는 뜻이고, 텍스트 뒤에
+같은 번호로 실제 이미지가 첨부된다. 기하 문항은 그림이 조건의 일부이므로
+**이미지를 실제로 보고** 판단하라. 좌표축 방향, 점의 위치 관계, 각·길이 표시,
+직각 기호, 음영 영역이 본문 조건이나 해설 서술과 어긋나면 AI_FIGURE_MISMATCH다.
+
+`[그림 N]` 표시가 있는데 그 번호의 이미지가 첨부되지 않았다면(변환 실패)
+그 문항은 `판단불가` / `낮음`으로 두고 추측하지 마라.
 
 # 한글 수식 스크립트 문법 ($...$ 안)
 {}over{} 분수 · sqrt{} 제곱근 · root n of x · ^{} 위첨자 · _{} 아래첨자
@@ -128,7 +139,36 @@ def _item_text(it):
     return '\n'.join(lines)
 
 
-def build_params(it):
+def _content(it, images=None):
+    """user 컨텐츠 블록. 그림이 있으면 `[그림 N]` 라벨과 함께 이미지를 붙인다.
+
+    images: {image_id: (media_type, bytes)} — hwpx_images.load() 산출.
+    문항의 images 목록과 `[그림 N]` 번호가 같은 순서라, 라벨을 붙여 보내면
+    모델이 어느 그림이 어느 표시인지 알 수 있다. 첨부 못 한 그림은 그렇다고
+    적어 준다 — 없는 걸 상상해서 판정하면 그게 오탐이다.
+    """
+    blocks = [{'type': 'text', 'text': _item_text(it)}]
+    if not images:
+        return blocks
+    missing = []
+    for n, iid in enumerate(it.get('images', []), 1):
+        got = images.get(iid)
+        if not got:
+            missing.append(n)
+            continue
+        mtype, data = got
+        blocks.append({'type': 'text', 'text': f'[그림 {n}]'})
+        blocks.append({'type': 'image',
+                       'source': {'type': 'base64', 'media_type': mtype,
+                                  'data': base64.standard_b64encode(data).decode()}})
+    if missing:
+        blocks.append({'type': 'text',
+                       'text': '[그림 ' + ', '.join(map(str, missing))
+                               + '] 은(는) 첨부하지 못했다 — 추측하지 말 것.'})
+    return blocks
+
+
+def build_params(it, images=None):
     """문항 1개에 대한 Messages API 파라미터.
 
     system은 문항마다 동일하므로 cache_control로 캐싱한다(문항 수만큼 재사용).
@@ -144,7 +184,7 @@ def build_params(it):
             'effort': 'high',
             'format': {'type': 'json_schema', 'schema': VERDICT_SCHEMA},
         },
-        'messages': [{'role': 'user', 'content': _item_text(it)}],
+        'messages': [{'role': 'user', 'content': _content(it, images)}],
     }
 
 
@@ -181,26 +221,26 @@ def _text_of(content):
     return ''
 
 
-def estimate(items):
+def estimate(items, images=None):
     """API 호출 없이 입력 토큰만 세어 비용 범위를 알려준다."""
     import anthropic
     client = anthropic.Anthropic()
     n_in = 0
     for it in items:
-        p = build_params(it)
+        p = build_params(it, images)
         n_in += client.messages.count_tokens(
             model=MODEL, system=p['system'], messages=p['messages']).input_tokens
     return n_in
 
 
-def run_sync(items, progress=None):
+def run_sync(items, progress=None, images=None):
     """즉시 실행. 소수 문항 시범용 — 전체는 Batch가 절반 값이다."""
     import anthropic
     client = anthropic.Anthropic()
     results, usage = {}, {'in': 0, 'out': 0}
     for i, it in enumerate(items, 1):
         # max_tokens가 크면 SDK가 비스트리밍 요청을 거부한다 → 스트리밍으로 받는다
-        with client.messages.stream(**build_params(it)) as st:
+        with client.messages.stream(**build_params(it, images)) as st:
             msg = st.get_final_message()
         usage['in'] += msg.usage.input_tokens
         usage['out'] += msg.usage.output_tokens
@@ -213,7 +253,7 @@ def run_sync(items, progress=None):
     return results, usage
 
 
-def run_batch(items, poll=30, progress=None):
+def run_batch(items, poll=30, progress=None, images=None):
     """Batch API — 표준가의 50%. 보통 1시간 내, 최대 24시간."""
     import anthropic
     from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
@@ -222,7 +262,7 @@ def run_batch(items, poll=30, progress=None):
 
     batch = client.messages.batches.create(requests=[
         Request(custom_id=it['loc'],
-                params=MessageCreateParamsNonStreaming(**build_params(it)))
+                params=MessageCreateParamsNonStreaming(**build_params(it, images)))
         for it in items])
     if progress:
         progress(f'배치 생성 {batch.id} — 문항 {len(items)}개')
@@ -253,15 +293,15 @@ def run_batch(items, poll=30, progress=None):
     return results, usage
 
 
-def review(items, sync=False, progress=None, poll=30):
+def review(items, sync=False, progress=None, poll=30, images=None):
     """items → (findings, results, usage). 실패 문항은 결함이 아니라 '검수 못함'.
 
     poll: 배치 상태 조회 간격(초). sync=True 면 무시된다.
     """
     if sync:
-        results, usage = run_sync(items, progress=progress)
+        results, usage = run_sync(items, progress=progress, images=images)
     else:
-        results, usage = run_batch(items, poll=poll, progress=progress)
+        results, usage = run_batch(items, poll=poll, progress=progress, images=images)
     by_loc = {i['loc']: i for i in items}
     findings, failed = [], []
     for loc, v in results.items():
@@ -291,10 +331,24 @@ if __name__ == '__main__':
                     help='Batch 대신 즉시 실행 (2배 비싸다 — 소수 문항만)')
     ap.add_argument('--estimate', action='store_true',
                     help='입력 토큰·예상 비용만 계산하고 끝낸다 (검수 호출 안 함)')
+    ap.add_argument('--hwpx',
+                    help='원본 hwpx — 그림을 꺼내 함께 보낸다 (기하는 그림이 조건의 일부)')
     a = ap.parse_args()
 
     data = json.load(open(a.items_json, encoding='utf-8'))
     items = data['items'][:a.limit] if a.limit else data['items']
+
+    images = None
+    if a.hwpx:
+        import hwpx_images
+        images = hwpx_images.load(a.hwpx)
+        need = {i for it in items for i in it.get('images', [])}
+        print(f'그림 {len(images)}개 추출, 이 문항들이 쓰는 것 {len(need)}개 '
+              f'(첨부 불가 {len(need - set(images))}개)')
+    elif any(it.get('images') for it in items):
+        n = sum(1 for it in items if it.get('images'))
+        print(f'※ 그림이 있는 문항 {n}개인데 --hwpx 를 주지 않았다. '
+              f'그 문항은 AI가 판단불가로 되돌린다.', file=sys.stderr)
 
     if not (os.environ.get('ANTHROPIC_API_KEY')
             or os.environ.get('ANTHROPIC_AUTH_TOKEN')):
@@ -304,7 +358,7 @@ if __name__ == '__main__':
             sys.exit(1)
 
     if a.estimate:
-        n_in = estimate(items)
+        n_in = estimate(items, images)
         # 출력 토큰은 실측 전이라 범위로 제시한다 (사고 과정 포함, 문항당 2~6천)
         for lo, hi in ((2000, 6000),):
             for label, rate in (('Batch(50%)', 0.5), ('즉시', 1.0)):
@@ -318,7 +372,8 @@ if __name__ == '__main__':
     def prog(*x):
         print(x[0] if len(x) == 1 else f'  [{x[0]}/{x[1]}] {x[2]}', flush=True)
 
-    findings, results, usage = review(items, sync=a.sync, progress=prog)
+    findings, results, usage = review(items, sync=a.sync, progress=prog,
+                                      images=images)
 
     if a.out:
         json.dump({'model': MODEL, 'findings': findings, 'results': results,

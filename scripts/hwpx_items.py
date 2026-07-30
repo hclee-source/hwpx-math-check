@@ -23,8 +23,22 @@ def _eq(eq):
     return ''
 
 
-def _cell_text(tc, eq_wrap=True):
-    """셀 안 문단을 순서대로 복원. 문단 사이는 개행으로 유지."""
+def _img_id(pic):
+    """<hp:pic> 안의 <hc:img binaryItemIDRef="imageN">에서 그림 id."""
+    for c in pic.iter():
+        ref = c.get('binaryItemIDRef')
+        if ref:
+            return ref
+    return None
+
+
+def _cell_text(tc, eq_wrap=True, img_out=None):
+    """셀 안 문단을 순서대로 복원. 문단 사이는 개행으로 유지.
+
+    img_out에 리스트를 주면 그림이 나온 자리에 `[그림 N]`을 남기고 그 id를
+    담는다. N은 문항 단위 일련번호라, 호출자가 문항 하나에 같은 리스트를
+    계속 넘겨야 번호가 이어진다.
+    """
     out = []
     for p in tc.iter():
         if ln(p) != 'p':
@@ -39,6 +53,11 @@ def _cell_text(tc, eq_wrap=True):
                 elif ln(ch) == 'equation':
                     s = _eq(ch)
                     buf.append(f'${s}$' if eq_wrap else s)
+                elif ln(ch) == 'pic' and img_out is not None:
+                    iid = _img_id(ch)
+                    if iid:
+                        img_out.append(iid)
+                        buf.append(f'[그림 {len(img_out)}]')
         seg = ''.join(buf)
         if seg.strip():
             out.append(seg.strip())
@@ -120,15 +139,17 @@ def _top_tables(p):
 
 def _parse_table(tbl):
     rec = {}
+    imgs = []                    # 문항 단위 — 필드를 넘어 번호가 이어진다
     for tr in _own_rows(tbl):
         cells = list(_own_cells(tr))
         if len(cells) < 2:
             continue
         key = _cell_text(cells[0], eq_wrap=False).strip()
         if key in FIELDS:
-            rec[key] = _cell_text(cells[1])
+            rec[key] = _cell_text(cells[1], img_out=imgs)
     if '문항id' not in rec or not rec.get('문항id', '').strip():
         return None
+    rec['_images'] = imgs
     return rec
 
 
@@ -186,6 +207,8 @@ def to_items_json(recs, source):
             'answer': ans, 'answer_raw': raw, 'expl': expl,
             'loc': r.get('문항id', ''), 'page': r.get('_page'),
             'src_cite': r.get('_source', ''),
+            # 본문·해설에 남은 `[그림 N]` 표시와 같은 순서의 그림 id
+            'images': r.get('_images', []),
             'meta': {k: r.get(k, '') for k in ('문항id', '지식단위', '난이도', '학습행동영역', '쌍둥이문항')},
         })
     return {'source': source, 'n': len(out), 'items': out}

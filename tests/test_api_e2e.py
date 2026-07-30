@@ -11,12 +11,15 @@
   · run_batch의 폴링 루프가 실제로 폴링하고 종료 조건을 지키는가
   · 배치 결과 JSONL을 순서 무관하게 custom_id로 맞추는가
   · refusal·errored 문항을 결함이 아니라 '검수 실패'로 분리하는가
+  · 그림을 base64 image 블록으로 `[그림 N]` 라벨과 함께 전송하는가 (멀티모달)
+  · 그림을 안 넘겼을 때 image 블록이 없는가 (쓸데없는 토큰을 안 태우는가)
   · 토큰 사용량 누적과 Batch 50% 단가 환산
 
 검증되지 않는 것: Anthropic 서버의 실제 판정 품질. 그건 코드로 검증할 수 없다.
 
   python tests/test_api_e2e.py     # anthropic 미설치면 건너뜀
 """
+import base64
 import json
 import os
 import sys
@@ -123,6 +126,14 @@ def _batch(status):
 PORT = [0]
 
 
+def _text_body(body):
+    """요청 본문의 user 컨텐츠에서 text 블록만 이어붙인다 (블록 리스트 구조)."""
+    c = body['messages'][0]['content']
+    if isinstance(c, str):
+        return c
+    return '\n'.join(b.get('text', '') for b in c if b.get('type') == 'text')
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -151,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
 
         # 단건 메시지 (run_sync) — 우리는 스트리밍으로 호출한다
         SEEN.append(('message', body))
-        loc = body['messages'][0]['content'].split('\n')[0].split(': ')[1]
+        loc = _text_body(body).split('\n')[0].split(': ')[1]
         msg = _msg(loc, refusal=(loc == REFUSED))
         if body.get('stream'):
             return self._send(None, 'text/event-stream', _sse(msg).encode())
@@ -251,11 +262,35 @@ def main():
                                  for b in sent}) == 1,
           '검수 기준이 문항마다 달라지면 프롬프트 캐시가 안 맞는다')
     # 문항 격리: 한 요청에 다른 문항이 섞이면 안 된다
-    bodies = [dig(b, 'messages', 0, 'content', default='') or '' for b in sent]
+    bodies = [_text_body(b) for b in sent]
     leak = [t for t in bodies if sum(l in t for l in locs) != 1]
     check('e2e.wire.문항격리', sent and not leak, f'{len(leak)}건 누출')
     check('e2e.wire.XML안보냄',
           all('<hp:' not in t and '<hs:' not in t for t in bodies))
+    # 그림을 안 넘겼으면 image 블록이 없어야 한다 (쓸데없는 토큰을 태우지 않는다)
+    check('e2e.wire.그림없음',
+          all(not any(x.get('type') == 'image'
+                      for x in dig(b, 'messages', 0, 'content', default=[]))
+              for b in sent))
+
+    # ── 2.5 멀티모달: 그림을 실제로 전송하는가 ──────────────────────
+    SEEN.clear()
+    fig_items = [dict(items[0], loc=locs[0],
+                      q='본문 [그림 1] 에서', images=['imgA', 'imgB'])]
+    png = (b'\x89PNG\r\n\x1a\n' + b'\x00' * 40)
+    ai.run_sync(fig_items, images={'imgA': ('image/png', png)})   # imgB는 변환 실패
+    blocks = dig([b for k, b in SEEN if k == 'message'][0],
+                 'messages', 0, 'content', default=[])
+    kinds = [x.get('type') for x in blocks]
+    check('e2e.img.블록구성', kinds == ['text', 'text', 'image', 'text'], str(kinds))
+    src = dig(blocks, 2, 'source', default={})
+    check('e2e.img.base64전송',
+          src.get('type') == 'base64' and src.get('media_type') == 'image/png'
+          and base64.b64decode(src.get('data', '')) == png, str(src)[:100])
+    check('e2e.img.라벨동행', dig(blocks, 1, 'text') == '[그림 1]',
+          str(dig(blocks, 1, 'text')))
+    check('e2e.img.누락고지', '첨부하지 못했다' in str(dig(blocks, 3, 'text')),
+          str(dig(blocks, 3, 'text')))
 
     # ── 3. run_batch: 폴링 루프 + 순서 무관 custom_id 매칭 ───────────
     # ended 전에 루프를 빠져나오면 results_url 이 None 이라 SDK가 AnthropicError를
