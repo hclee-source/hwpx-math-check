@@ -398,6 +398,89 @@ def t_fix():
     os.unlink(dst)
 
 
+# ── 5.8 ai_review (API 호출 없이 — 오탐 방어 로직과 스키마만) ──
+
+def t_ai():
+    """AI 검수의 핵심은 '확신 없는 지적을 버리는 것'이다. 그걸 검증한다."""
+    import ai_review as ai
+
+    # 스키마 유효성: 구조화 출력은 모든 object에 additionalProperties:false 필요
+    def walk(s):
+        if s.get('type') == 'object':
+            check('ai.스키마closed', s.get('additionalProperties') is False, str(s)[:80])
+            for v in s.get('properties', {}).values():
+                walk(v)
+        if s.get('type') == 'array':
+            walk(s.get('items', {}))
+    walk(ai.VERDICT_SCHEMA)
+    codes = ai.VERDICT_SCHEMA['properties']['findings']['items']['properties']['code']
+    check('ai.코드enum일치', set(codes['enum']) == set(ai.SEV_BY_CONF),
+          f"{codes['enum']} vs {list(ai.SEV_BY_CONF)}")
+
+    # 요청 파라미터: 캐싱·구조화출력·모델
+    it = item(7, ['$1$', '$2$', '$3$', '$4$', '$5$'], 2, '풀이\n따라서 $2$',
+              loc='AG0C1S0Aa1-01')
+    p = ai.build_params(it)
+    check('ai.모델', p['model'] == 'claude-opus-5', p['model'])
+    check('ai.시스템캐싱',
+          p['system'][0]['cache_control'] == {'type': 'ephemeral'})
+    check('ai.구조화출력',
+          p['output_config']['format']['schema'] is ai.VERDICT_SCHEMA)
+    check('ai.effort', p['output_config']['effort'] == 'high')
+    body = p['messages'][0]['content']
+    check('ai.문항텍스트', 'AG0C1S0Aa1-01' in body and '[인쇄된 정답] 2번' in body)
+    check('ai.XML안보냄', '<' not in body.replace('<=', ''), body[:80])
+
+    # ★ 확신도 → 등급 환산: '낮음'은 결함으로 올리지 않는다 (오탐 방어의 핵심)
+    def verdict(conf, code='AI_ANSWER_WRONG'):
+        return {'solved': '3번', 'answer_verdict': '불일치', 'confidence': conf,
+                'findings': [{'code': code, 'where': '해설', 'detail': 'x',
+                              'evidence': 'y', 'fix': 'z'}]}
+    check('ai.낮음버림', ai.to_findings('L', 1, 2, verdict('낮음')) == [])
+    hi = ai.to_findings('L', 1, 2, verdict('높음'))
+    check('ai.높음high', len(hi) == 1 and hi[0]['sev'] == 'high', str(hi))
+    md = ai.to_findings('L', 1, 2, verdict('보통'))
+    check('ai.보통medium', len(md) == 1 and md[0]['sev'] == 'medium', str(md))
+    # 표현 지적은 확신도가 높아도 low를 넘지 않는다
+    w = ai.to_findings('L', 1, 2, verdict('높음', 'AI_WORDING'))
+    check('ai.표현은low', w and w[0]['sev'] == 'low', str(w))
+    check('ai.근거보존', hi[0]['evidence'] == 'y' and hi[0]['solved'] == '3번')
+    check('ai.스키마호환', {'code', 'sev', 'no', 'loc', 'want', 'tail'} <= set(hi[0]))
+
+    # review(): 실패 문항은 '결함'이 아니라 '검수 못함'으로 분리돼야 한다
+    its = [item(1, ['$1$'] * 5, 1, 'a', loc='AG0C1S0Aa1-01'),
+           item(2, ['$1$'] * 5, 1, 'b', loc='AG0C1S0Aa1-02'),
+           item(3, ['$1$'] * 5, 1, 'c', loc='AG0C1S0Aa1-03')]
+    fake = {
+        'AG0C1S0Aa1-01': verdict('높음'),
+        'AG0C1S0Aa1-02': {'solved': '1번', 'answer_verdict': '일치',
+                          'confidence': '높음', 'findings': []},
+        'AG0C1S0Aa1-03': {'error': 'refusal'},
+    }
+    orig = ai.run_sync
+    ai.run_sync = lambda items, progress=None: (fake, {'in': 1000, 'out': 2000})
+    try:
+        f, res, usage = ai.review(its, sync=True)
+    finally:
+        ai.run_sync = orig
+    check('ai.결함1건', len(f) == 1 and f[0]['loc'] == 'AG0C1S0Aa1-01', str(f))
+    check('ai.실패분리', [x['loc'] for x in usage['failed']] == ['AG0C1S0Aa1-03'],
+          str(usage['failed']))
+    # Batch는 표준가의 50%
+    check('ai.비용batch', abs(ai.cost({'in': 1_000_000, 'out': 1_000_000}, True)
+                            - 15.0) < 1e-9)
+    check('ai.비용sync', abs(ai.cost({'in': 1_000_000, 'out': 1_000_000}, False)
+                           - 30.0) < 1e-9)
+
+    # 보고서: AI 카드에 근거가 뜨고, HTML은 이스케이프돼야 한다 (XSS)
+    evil = dict(hi[0], evidence='<img src=x onerror=alert(1)>', loc='AG0C1S0Aa1-01')
+    html = report_html.render([evil], {}, {}, ['t'],
+                              items={i['loc']: i for i in its})
+    check('ai.보고서근거', '근거' in html and '확신도' in html)
+    check('ai.보고서XSS', '<img src=x' not in html and '&lt;img' in html)
+    check('ai.보고서설명', 'AI가 직접 푼 결과가 인쇄된 정답과 다름' in html)
+
+
 # ── 6. 실데이터 회귀 (data/ 있을 때만) ────────────────────────
 
 def t_regression():
@@ -438,7 +521,7 @@ def t_regression():
 if __name__ == '__main__':
     for t in (t_transpile, t_eq_ok_value, t_eq_wrong_answer, t_eq_range,
               t_eq_dup, t_eq_equation_options, t_eq_orphan_unbalanced,
-              t_eq_pm, t_twin, t_report, t_pages, t_extra, t_fix,
+              t_eq_pm, t_twin, t_report, t_pages, t_extra, t_fix, t_ai,
               t_regression):
         print(t.__name__)
         try:

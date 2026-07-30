@@ -11,7 +11,8 @@ hwpx (표 기반 문항 은행)
        │    ├─ eq_answer_check.py   정답 ↔ 해설 SymPy 동치 검산
        │    ├─ extra_checks.py      오탈자·출처·표기·중복·통계·메타 부가 검사
        │    ├─ twin_check.py        평가↔일반 쌍둥이문항 교차 검수
-       │    └─ hml2sympy.py         한글 수식 스크립트 → SymPy 트랜스파일러
+       │    ├─ hml2sympy.py         한글 수식 스크립트 → SymPy 트랜스파일러
+       │    └─ ai_review.py       [선택] Claude API 심층 검수 (--ai, 토큰 비용)
        └─ scripts/hwpx_fix.py     검사 결과를 hwpx에 되돌려 쓰는 교정기
 ```
 
@@ -28,6 +29,7 @@ hwpx (표 기반 문항 은행)
 | 쌍둥이문항 교차 검수 | ✅ 실측 불변식 5종 (메타 3필드·id 몸통·참조 무결성) |
 | 통합 러너 (`--math` 모드) | ✅ `math_review.py` — exam-item-reviewer에 그대로 이식 가능 |
 | **hwpx 자동 교정** | ✅ `hwpx_fix.py` — 확정 가능한 결함만 되돌려 쓰고, 판단 필요분은 보류 |
+| **AI 심층 검수 (선택)** | ✅ `ai_review.py` — 해설 단계 오류·조건 불충분 등 규칙 사각지대 |
 
 ## 사용법
 
@@ -69,11 +71,16 @@ python scripts/twin_check.py 평가_items.json 일반_items.json
 python scripts/hwpx_fix.py 문항은행.hwpx --dry-run          # 무엇이 바뀌는지만 본다
 python scripts/hwpx_fix.py 문항은행.hwpx --log 교정내역.json  # 원본 옆에 *_교정.hwpx
 
+# 5) [선택] AI 심층 검수 — 규칙이 못 잡는 것만. 토큰 비용이 든다
+python scripts/ai_review.py items.json --estimate           # 비용만 먼저 계산
+python scripts/ai_review.py items.json --limit 5 --sync     # 5문항 시범
+python scripts/math_review.py items.json --ai --html 보고서.html   # 통합 실행
+
 # 트랜스파일러 자가 테스트
 python scripts/hml2sympy.py --selftest
 ```
 
-요구사항: Python 3.9+, `pip install lxml sympy`
+요구사항: Python 3.9+, `pip install lxml sympy` (AI 검수만 `pip install anthropic`)
 
 새 PC 셋업은 세 줄이면 된다:
 
@@ -113,6 +120,42 @@ pip install lxml sympy
 
 > **수식을 병합하면 한글의 레이아웃 캐시(`lineseg`)가 낡는다.**
 > 교정 후 **한글에서 열고 저장**한 뒤 재검사해야 쪽 번호가 정확하다.
+
+## AI 심층 검수 (ai_review.py) — 선택
+
+결정론 검사의 사각지대가 하나 있다. `eq_answer_check`는 `선택지[정답] ↔ 해설 결론`의
+동치만 본다. **해설 자체의 계산이 틀렸으면 정답과 해설은 여전히 서로 일치하므로
+검사를 통과한다.** 그 구멍을 Claude API로 메운다.
+
+| AI가 보는 것 | AI가 보지 않는 것 (규칙이 이미 전수 검사) |
+|---|---|
+| `AI_ANSWER_WRONG` 직접 푼 결과 ≠ 인쇄된 정답 | 수식 조판·괄호 짝·쪼개진 수식 |
+| `AI_EXPL_ERROR` 해설 중간 단계 오류·비약 | 표기 스타일·출처·오탈자 |
+| `AI_ITEM_AMBIGUOUS` 조건 불충분·중의적 | 문항 중복·정답 분포 편향 |
+| `AI_WORDING` 용어 오류·오해를 부르는 문장 | 정답↔해설 결론 동치 |
+
+**오탐 방어가 설계의 중심이다.**
+
+- 해설을 먼저 읽지 말고 **직접 풀고 나서** 대조하도록 지시한다 — 해설을 따라 읽으면
+  틀린 단계를 그대로 승인한다
+- 등급(sev)을 **모델이 정하지 않는다.** 모델은 확신도(높음/보통/낮음)만 내고,
+  코드가 환산한다. **확신도 '낮음'은 결함으로 올리지 않고 버린다**
+- 표현 지적(`AI_WORDING`)은 확신도가 높아도 `low`를 넘지 않는다
+- 그림이 필요한 문항은 텍스트로 판단 불가 → `판단불가`로 두고 추측하지 않는다
+- 보고서 카드에 **AI가 푼 결과·근거·확신도를 함께** 띄운다. 근거 없는 지적은
+  편집자가 검증할 수 없으므로 결함이 아니다
+
+**비용 설계.** 문항 1개 = 요청 1개. 기본이 **Batch API(표준가의 50%)**이고,
+검수 기준 프롬프트(약 1,300자)는 문항 전체에 걸쳐 **프롬프트 캐싱**으로 재사용된다.
+판정은 **structured outputs**로 스키마를 고정해 파싱 실패가 없다.
+`--estimate`로 **API를 호출하지 않고** 입력 토큰과 비용 범위를 먼저 볼 수 있다.
+
+`ANTHROPIC_API_KEY` 환경변수(또는 `ant auth login`)가 필요하다.
+**웹 검수 페이지에는 넣지 않았다** — 브라우저에 API 키를 두면 유출된다.
+AI 검수는 로컬 전용이다.
+
+> section0.xml을 컨텍스트에 올리지 않는 원칙은 그대로다. 문항별 텍스트
+> (본문·보기·정답·해설)만 보낸다 — 한 요청에 다른 문항이 섞이지도 않는다.
 
 ## exam-item-reviewer 통합 (--math 모드)
 

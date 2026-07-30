@@ -22,7 +22,7 @@ import twin_check
 SEV_ORDER = {'high': 0, 'medium': 1, 'low': 2}
 
 
-def run(paths):
+def run(paths, ai=False, ai_sync=False, ai_limit=None, ai_progress=None):
     findings, stats, details, extras = [], {}, {}, {}
     datas = []
     for path in paths:
@@ -51,6 +51,21 @@ def run(paths):
         findings += f
         stats['쌍둥이'] = dict(st)
 
+    if ai:
+        # 규칙이 못 잡는 것(해설 단계 오류·조건 불충분)만 Claude API에 넘긴다.
+        # 결정론 검사와 달리 토큰이 든다 — 호출은 명시적 요청(--ai)일 때만.
+        import ai_review
+        for data in datas:
+            its = data['items'][:ai_limit] if ai_limit else data['items']
+            f, _, usage = ai_review.review(its, sync=ai_sync, progress=ai_progress)
+            for x in f:
+                x['file'] = data.get('source', '')
+            findings += f
+            stats[f"AI:{data.get('source', '')}"] = {
+                '문항': len(its), '결함후보': len(f),
+                '검수실패': len(usage['failed']),
+                '비용USD': round(ai_review.cost(usage, usage['batch']), 2)}
+
     findings.sort(key=lambda x: (SEV_ORDER.get(x['sev'], 9), x['code'], x.get('no', 0)))
     items = {i['meta'].get('문항id', i.get('loc', '')): i
              for d in datas for i in d['items']}
@@ -63,11 +78,18 @@ if __name__ == '__main__':
                     help='items.json 1~2개 (2개면 첫 번째가 쌍둥이 필드 보유측=평가)')
     ap.add_argument('--out')
     ap.add_argument('--html', help='편집자용 HTML 보고서 저장 경로')
+    ap.add_argument('--ai', action='store_true',
+                    help='Claude API 심층 검수 추가 (토큰 비용 발생 — ai_review.py)')
+    ap.add_argument('--ai-sync', action='store_true', help='AI 검수를 Batch 대신 즉시 실행')
+    ap.add_argument('--ai-limit', type=int, help='AI 검수를 앞 N문항만 (시범)')
     a = ap.parse_args()
     if len(a.items_json) > 2:
         ap.error('items.json 은 1개 또는 2개')
 
-    findings, stats, details, items, extras = run(a.items_json)
+    findings, stats, details, items, extras = run(
+        a.items_json, ai=a.ai, ai_sync=a.ai_sync, ai_limit=a.ai_limit,
+        ai_progress=(lambda *x: print(x[0] if len(x) == 1
+                                      else f'  [{x[0]}/{x[1]}] {x[2]}', flush=True)))
     if a.out:
         json.dump({'findings': findings, 'stats': stats, 'details': details,
                    'extras': extras},

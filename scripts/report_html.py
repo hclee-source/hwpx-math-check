@@ -23,6 +23,11 @@ CODE_DESC = {
     'TWIN_UNREF':     '평가 어디서도 참조되지 않는 일반 문항',
     'ITEM_DUP_EXACT': '다른 문항과 완전히 동일 (변형 없이 복사)',
     'META_MISMATCH':  '메타데이터 정합 위반',
+    # AI 심층 검수 (ai_review.py) — 규칙으로 못 잡는 것. 전부 사람 확인 대상이다.
+    'AI_ANSWER_WRONG': 'AI가 직접 푼 결과가 인쇄된 정답과 다름 — 확인 필요',
+    'AI_EXPL_ERROR':   'AI 판정: 해설 중간 단계에 오류·비약',
+    'AI_ITEM_AMBIGUOUS': 'AI 판정: 조건이 불충분하거나 중의적',
+    'AI_WORDING':      'AI 판정: 용어·문장이 오해를 부름',
 }
 FIX_HINT = {
     'EQ_ORPHAN_OP':   '한글에서 쪼개진 두 수식을 지우고 수식 하나로 다시 입력하세요.',
@@ -171,6 +176,24 @@ def _card_body(f, item, items):
         if code == 'ITEM_DUP_EXACT' and item is not None:
             p.append(f'<div class="row">본문:<div class="quote">'
                      f'{pretty_text(item.get("q", "")[:200])}</div></div>')
+
+    elif code.startswith('AI_'):
+        # AI 판정은 근거를 반드시 함께 보여준다 — 근거 없는 지적은 편집자가 검증할 수 없다.
+        if f.get('solved'):
+            p.append(f'<div class="row">AI가 직접 푼 결과:'
+                     f'<div class="quote">{pretty_text(f["solved"])}</div></div>')
+        if ans and ans <= len(opts):
+            p.append(f'<div class="row">인쇄된 정답 <b>{ans}번</b>:'
+                     f'<div class="quote">{pretty_text(opts[ans-1])}</div></div>')
+        p.append(f'<div class="row"><b>{_e(f.get("want", ""))}</b> — '
+                 f'{_e(f.get("tail", ""))}</div>')
+        if f.get('evidence'):
+            p.append(f'<div class="row">근거:<div class="quote">'
+                     f'{pretty_text(f["evidence"])}</div></div>')
+        if f.get('fix'):
+            p.append(f'<div class="fix">수정 제안 → {pretty_text(f["fix"])}</div>')
+        p.append(f'<div class="hint">✏ AI 확신도 <b>{_e(f.get("confidence", ""))}</b>'
+                 ' · 인쇄된 정답을 뒤집기 전에 사람이 직접 재검산할 것</div>')
 
     hint = FIX_HINT.get(code)
     if hint:
